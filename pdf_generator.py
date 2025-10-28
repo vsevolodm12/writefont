@@ -171,41 +171,74 @@ def draw_line_with_formatting(c, x, y, line_text, font_name, font_size, font_pat
 
 
 def generate_grid_background(c, page_size, cell_size=5*mm):
-    """Генерирует фоновую сетку (клетку) как в тетради"""
+    """
+    Генерирует фоновую сетку (клетку) как в тетради.
+    Сетка всегда центрируется симметрично и имеет фиксированную структуру.
+    Использует фиксированное количество клеток для каждого формата для стабильности.
+    """
+    from reportlab.lib.pagesizes import A4, A5
+    
     width, height = page_size
     margin = 15 * mm
     
-    # Вычисляем рабочую область (область внутри отступов)
+    # Фиксированное количество клеток для каждого формата (предвычислено)
+    # Это обеспечивает одинаковую сетку при каждой генерации
+    if page_size == A4:
+        # A4: 210mm x 297mm, рабочая область: 180mm x 267mm (с учетом margin 15mm)
+        # 180 / 5 = 36 клеток по ширине, 267 / 5 = 53 клетки по высоте
+        num_vertical_cells = 36
+        num_horizontal_cells = 53
+    elif page_size == A5:
+        # A5: 148mm x 210mm, рабочая область: 118mm x 180mm (с учетом margin 15mm)
+        # 118 / 5 = 23 клетки по ширине, 180 / 5 = 36 клеток по высоте
+        num_vertical_cells = 23
+        num_horizontal_cells = 36
+    else:
+        # Для других форматов вычисляем динамически
+        work_width = width - 2 * margin
+        work_height = height - 2 * margin
+        num_vertical_cells = int(work_width / cell_size)
+        num_horizontal_cells = int(work_height / cell_size)
+    
+    # Вычисляем общую ширину/высоту сетки
+    grid_width = num_vertical_cells * cell_size
+    grid_height = num_horizontal_cells * cell_size
+    
+    # Вычисляем рабочую область
     work_width = width - 2 * margin
     work_height = height - 2 * margin
     
-    # Вычисляем количество полных клеток, которые помещаются
-    num_vertical_cells = int(work_width / cell_size)
-    num_horizontal_cells = int(work_height / cell_size)
-    
     # Вычисляем оставшееся пространство и распределяем его равномерно для симметрии
-    remaining_vertical = work_width - (num_vertical_cells * cell_size)
-    remaining_horizontal = work_height - (num_horizontal_cells * cell_size)
+    remaining_vertical = work_width - grid_width
+    remaining_horizontal = work_height - grid_height
     
-    # Отступ для симметричного выравнивания
-    vertical_offset = remaining_vertical / 2
-    horizontal_offset = remaining_horizontal / 2
+    # Отступ для симметричного выравнивания (одинаковый с обеих сторон)
+    vertical_offset = remaining_vertical / 2.0
+    horizontal_offset = remaining_horizontal / 2.0
     
-    # Начальные координаты с учетом симметричного выравнивания
-    start_x = margin + vertical_offset
-    start_y = margin + horizontal_offset
+    # Начальные координаты сетки (симметрично центрированы)
+    grid_start_x = margin + vertical_offset
+    grid_start_y = margin + horizontal_offset
+    
+    # Конечные координаты сетки
+    grid_end_x = grid_start_x + grid_width
+    grid_end_y = grid_start_y + grid_height
     
     # Рисуем вертикальные линии (включая первую и последнюю)
     c.setStrokeColor(colors.Color(0.9, 0.9, 0.9))
     c.setLineWidth(0.3)
+    
+    # Рисуем вертикальные линии от первой до последней
     for i in range(num_vertical_cells + 1):
-        x = start_x + i * cell_size
-        c.line(x, margin, x, height - margin)
+        x = grid_start_x + (i * cell_size)
+        # Линии рисуются от верхней границы сетки до нижней границы сетки
+        c.line(x, grid_start_y, x, grid_end_y)
     
     # Рисуем горизонтальные линии (включая первую и последнюю)
     for i in range(num_horizontal_cells + 1):
-        y = start_y + i * cell_size
-        c.line(margin, y, width - margin, y)
+        y = grid_start_y + (i * cell_size)
+        # Линии рисуются от левой границы сетки до правой границы сетки
+        c.line(grid_start_x, y, grid_end_x, y)
 
 
 def generate_pdf(text_content: str, font_path: str, page_format: str, output_path: str, grid_enabled: bool = False):
