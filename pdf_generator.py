@@ -173,71 +173,71 @@ def draw_line_with_formatting(c, x, y, line_text, font_name, font_size, font_pat
 def generate_grid_background(c, page_size, cell_size=5*mm):
     """
     Генерирует фоновую сетку (клетку) как в тетради.
-    Сетка всегда центрируется симметрично и имеет фиксированную структуру.
-    Использует фиксированное количество клеток для каждого формата для стабильности.
+    Сетка всегда начинается от краев margin и полностью заполняет рабочую область.
+    Использует динамическое вычисление количества клеток на основе реальных размеров.
     """
     from reportlab.lib.pagesizes import A4, A5
     
     width, height = page_size
     margin = 15 * mm
     
-    # Фиксированное количество клеток для каждого формата (предвычислено)
-    # Это обеспечивает одинаковую сетку при каждой генерации
-    if page_size == A4:
-        # A4: 210mm x 297mm, рабочая область: 180mm x 267mm (с учетом margin 15mm)
-        # 180 / 5 = 36 клеток по ширине, 267 / 5 = 53 клетки по высоте
-        num_vertical_cells = 36
-        num_horizontal_cells = 53
-    elif page_size == A5:
-        # A5: 148mm x 210mm, рабочая область: 118mm x 180mm (с учетом margin 15mm)
-        # 118 / 5 = 23 клетки по ширине, 180 / 5 = 36 клеток по высоте
-        num_vertical_cells = 23
-        num_horizontal_cells = 36
-    else:
-        # Для других форматов вычисляем динамически
-        work_width = width - 2 * margin
-        work_height = height - 2 * margin
-        num_vertical_cells = int(work_width / cell_size)
-        num_horizontal_cells = int(work_height / cell_size)
-    
-    # Вычисляем общую ширину/высоту сетки
-    grid_width = num_vertical_cells * cell_size
-    grid_height = num_horizontal_cells * cell_size
-    
-    # Вычисляем рабочую область
+    # Вычисляем рабочую область (от margin до margin)
     work_width = width - 2 * margin
     work_height = height - 2 * margin
     
-    # Вычисляем оставшееся пространство и распределяем его равномерно для симметрии
-    remaining_vertical = work_width - grid_width
-    remaining_horizontal = work_height - grid_height
+    # Вычисляем количество клеток (округляем вниз, чтобы не выходить за границы)
+    # Это детерминированно для одинаковых форматов
+    num_vertical_cells = int(work_width / cell_size)
+    num_horizontal_cells = int(work_height / cell_size)
     
-    # Отступ для симметричного выравнивания (одинаковый с обеих сторон)
-    vertical_offset = remaining_vertical / 2.0
-    horizontal_offset = remaining_horizontal / 2.0
+    # Вычисляем реальный размер клетки для полного заполнения рабочей области
+    # Растягиваем клетки чтобы сетка точно заполняла work_width x work_height
+    # Это гарантирует что сетка дойдет до самых краев
+    actual_cell_width = work_width / float(num_vertical_cells) if num_vertical_cells > 0 else cell_size
+    actual_cell_height = work_height / float(num_horizontal_cells) if num_horizontal_cells > 0 else cell_size
     
-    # Начальные координаты сетки (симметрично центрированы)
-    grid_start_x = margin + vertical_offset
-    grid_start_y = margin + horizontal_offset
+    # Начальные координаты сетки (ровно на margin)
+    grid_start_x = margin
+    grid_start_y = margin
     
-    # Конечные координаты сетки
-    grid_end_x = grid_start_x + grid_width
-    grid_end_y = grid_start_y + grid_height
+    # Конечные координаты сетки (ровно на противоположном margin)
+    # Используем точные значения work_width и work_height для гарантии
+    grid_end_x = margin + work_width
+    grid_end_y = margin + work_height
     
     # Рисуем вертикальные линии (включая первую и последнюю)
     c.setStrokeColor(colors.Color(0.9, 0.9, 0.9))
     c.setLineWidth(0.3)
     
     # Рисуем вертикальные линии от первой до последней
+    # Первая линия на grid_start_x, последняя на grid_end_x
     for i in range(num_vertical_cells + 1):
-        x = grid_start_x + (i * cell_size)
-        # Линии рисуются от верхней границы сетки до нижней границы сетки
+        # Вычисляем позицию линии так, чтобы первая была на grid_start_x,
+        # а последняя точно на grid_end_x
+        if num_vertical_cells > 0:
+            if i == num_vertical_cells:
+                # Последняя линия точно на grid_end_x
+                x = grid_end_x
+            else:
+                x = grid_start_x + (i * actual_cell_width)
+        else:
+            x = grid_start_x
+        # Линии рисуются от верхней границы до нижней границы (полная высота)
         c.line(x, grid_start_y, x, grid_end_y)
     
     # Рисуем горизонтальные линии (включая первую и последнюю)
     for i in range(num_horizontal_cells + 1):
-        y = grid_start_y + (i * cell_size)
-        # Линии рисуются от левой границы сетки до правой границы сетки
+        # Вычисляем позицию линии так, чтобы первая была на grid_start_y,
+        # а последняя точно на grid_end_y
+        if num_horizontal_cells > 0:
+            if i == num_horizontal_cells:
+                # Последняя линия точно на grid_end_y
+                y = grid_end_y
+            else:
+                y = grid_start_y + (i * actual_cell_height)
+        else:
+            y = grid_start_y
+        # Линии рисуются от левой границы до правой границы (полная ширина)
         c.line(grid_start_x, y, grid_end_x, y)
 
 
