@@ -170,6 +170,19 @@ def draw_line_with_formatting(c, x, y, line_text, font_name, font_size, font_pat
         c.line(x + start_width, line_y, x + start_width + underline_width, line_y)
 
 
+def get_actual_cell_height(page_size, cell_size=5*mm):
+    """
+    Вычисляет реальную высоту клетки для выравнивания текста
+    """
+    from reportlab.lib.units import mm
+    
+    width, height = page_size
+    margin = 15 * mm
+    work_height = height - 2 * margin
+    num_horizontal_cells = int(work_height / cell_size)
+    return work_height / float(num_horizontal_cells) if num_horizontal_cells > 0 else cell_size
+
+
 def generate_grid_background(c, page_size, cell_size=5*mm):
     """
     Генерирует фоновую сетку (клетку) как в тетради.
@@ -275,21 +288,23 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
     # Настройки страницы
     width, height = page_size
     margin = 15 * mm
-    cell_size = 5 * mm  # Размер клетки сетки
+    cell_size = 5 * mm  # Базовый размер клетки сетки
     indent_first_line = 10 * mm  # Красная строка
     line_height = 6 * mm
-    font_size = 12
+    font_size = 14  # Увеличен размер шрифта
     paragraph_spacing = 3 * mm  # Отступ между абзацами
     
     # Рисуем сетку если нужно (ДО текста, чтобы она была фоном)
     if grid_enabled:
         generate_grid_background(c, page_size, cell_size)
-        # Если есть сетка, выравниваем текст с первой клеткой
-        # Сетка начинается с y = margin (сверху), высота клетки = cell_size
-        # Текст должен начинаться внутри первой клетки, учитывая что drawString рисует от базовой линии вверх
-        # Базовая линия должна быть внизу клетки минус небольшой отступ для визуального выравнивания
-        text_baseline_offset = font_size * 0.85  # Примерно 85% размера шрифта - позиция базовой линии
-        y = height - margin - cell_size + text_baseline_offset
+        # Если есть сетка, выравниваем текст внутри первой клетки снизу
+        # В ReportLab текст рисуется ВВЕРХ от базовой линии Y
+        # Размер шрифта 14pt = примерно 4.93mm, клетка ~5mm
+        # Базовая линия должна быть в верхней части клетки, чтобы текст рисовался вниз и помещался внутрь
+        actual_cell_height = get_actual_cell_height(page_size, cell_size)
+        # Вычисляем верхнюю границу последней клетки снизу и ставим базовую линию чуть ниже
+        # Небольшой отступ от верхнего края клетки (0.5mm), чтобы текст не прилипал к линии
+        y = height - margin - 0.5 * mm
     else:
         y = height - margin
     
@@ -387,8 +402,11 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size)
-                                text_baseline_offset = font_size * 0.85 if grid_enabled else 0
-                                y = height - margin - cell_size + text_baseline_offset if grid_enabled else height - margin
+                                if grid_enabled:
+                                    # Базовая линия чуть ниже верхнего края последней клетки
+                                    y = height - margin - 0.5 * mm
+                                else:
+                                    y = height - margin
                             else:
                                 y = height - margin
                         
@@ -430,8 +448,11 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size)
-                                text_baseline_offset = font_size * 0.85 if grid_enabled else 0
-                                y = height - margin - cell_size + text_baseline_offset if grid_enabled else height - margin
+                                if grid_enabled:
+                                    # Базовая линия чуть ниже верхнего края последней клетки
+                                    y = height - margin - 0.5 * mm
+                                else:
+                                    y = height - margin
                             else:
                                 y = height - margin
                         
@@ -454,8 +475,11 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size)
-                                text_baseline_offset = font_size * 0.85 if grid_enabled else 0
-                                y = height - margin - cell_size + text_baseline_offset if grid_enabled else height - margin
+                                if grid_enabled:
+                                    # Базовая линия чуть ниже верхнего края последней клетки
+                                    y = height - margin - 0.5 * mm
+                                else:
+                                    y = height - margin
                             else:
                                 y = height - margin
                         
