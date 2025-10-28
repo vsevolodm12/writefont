@@ -28,6 +28,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def periodic_cleanup():
+    """Периодическая очистка старых файлов"""
+    from utils.cleanup import cleanup_old_pdfs
+    
+    while True:
+        await asyncio.sleep(3600)  # Каждый час
+        try:
+            deleted = cleanup_old_pdfs(days_old=7)
+            if deleted > 0:
+                logger.info(f"✓ Очищено {deleted} старых PDF файлов")
+        except Exception as e:
+            logger.error(f"Ошибка в периодической очистке: {e}")
+
+
+async def log_statistics():
+    """Периодически выводит статистику производительности"""
+    from utils.metrics import metrics
+    
+    while True:
+        await asyncio.sleep(300)  # Каждые 5 минут
+        try:
+            metrics.log_stats()
+        except Exception as e:
+            logger.error(f"Ошибка при выводе статистики: {e}")
+
+
 async def main():
     """Главная функция запуска бота"""
     
@@ -41,7 +67,8 @@ async def main():
     try:
         from database.connection import get_db_connection
         conn = get_db_connection()
-        conn.close()
+        from database.connection import return_db_connection
+        return_db_connection(conn)
         logger.info("✓ База данных доступна")
     except Exception as e:
         logger.error(f"✗ Ошибка подключения к БД: {e}")
@@ -56,14 +83,28 @@ async def main():
     )
     dp = Dispatcher()
     
-    # Регистрируем роутеры
+    # Регистрируем роутеры (важен порядок!)
     # grid.router должен быть до menu.router, чтобы обрабатывать toggle_grid callback
     dp.include_router(grid.router)
-    dp.include_router(menu.router)  # Главное меню - перехватывает /start
+    
+    # menu.router регистрируем первым из основных, чтобы он обрабатывал /start
+    dp.include_router(menu.router)  # Главное меню - перехватывает /start и /menu
+    
+    # Остальные роутеры (commands.router пустой, но оставляем на случай)
     dp.include_router(commands.router)
     dp.include_router(fonts.router)
     dp.include_router(callbacks.router)
-    dp.include_router(text.router)
+    dp.include_router(text.router)  # Последним, чтобы не перехватывать команды
+    
+    logger.info(f"✓ Зарегистрировано роутеров: {len(dp.sub_routers)}")
+    
+    # Запускаем периодическую очистку в фоне
+    asyncio.create_task(periodic_cleanup())
+    logger.info("✓ Периодическая очистка файлов запущена")
+    
+    # Запускаем логирование статистики
+    asyncio.create_task(log_statistics())
+    logger.info("✓ Логирование метрик запущено")
     
     logger.info("Бот запущен и готов к работе!")
     

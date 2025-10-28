@@ -2,7 +2,7 @@
 Утилиты для работы с базой данных
 """
 
-from database.connection import get_db_connection
+from database.connection import get_db_connection, return_db_connection
 from config import FONTS_DIR, ADMIN_USER_ID
 import os
 
@@ -41,8 +41,10 @@ def get_or_create_user(user_id: int):
             'page_format': user[2]
         }
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
 
 
 def update_user_font(user_id: int, font_path: str):
@@ -62,8 +64,10 @@ def update_user_font(user_id: int, font_path: str):
         conn.commit()
         return cursor.rowcount > 0
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
 
 
 def update_user_page_format(user_id: int, page_format: str):
@@ -83,8 +87,10 @@ def update_user_page_format(user_id: int, page_format: str):
         conn.commit()
         return cursor.rowcount > 0
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
 
 
 def get_user_info(user_id: int):
@@ -108,8 +114,10 @@ def get_user_info(user_id: int):
             }
         return None
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
 
 
 def update_user_grid_setting(user_id: int, grid_enabled: bool):
@@ -144,8 +152,10 @@ def update_user_grid_setting(user_id: int, grid_enabled: bool):
         conn.commit()
         return cursor.rowcount > 0
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
 
 
 def save_font_file(file, filename: str) -> str:
@@ -199,8 +209,10 @@ def update_job_pdf_path(job_id: int, pdf_path: str, execution_time_ms: int = Non
         conn.commit()
         return cursor.rowcount > 0
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
 
 
 def update_job_status_failed(job_id: int, error_message: str = None):
@@ -231,6 +243,8 @@ def update_job_status_failed(job_id: int, error_message: str = None):
         conn.commit()
         return cursor.rowcount > 0
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
 

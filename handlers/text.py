@@ -5,10 +5,17 @@
 from aiogram import Router, F
 from aiogram.types import Message, FSInputFile
 from utils.db_utils import get_user_info, update_job_pdf_path, update_job_status_failed
-from database.connection import get_db_connection
+from database.connection import get_db_connection, return_db_connection
 from pdf_generator import generate_pdf_for_job
+from utils.executors import pdf_executor
+from utils.rate_limit import check_rate_limit
+from utils.metrics import metrics
 import time
 import os
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -18,6 +25,13 @@ async def handle_text_message(message: Message):
     """Обработчик текстовых сообщений для сохранения в jobs и генерации PDF"""
     user_id = message.from_user.id
     text_content = message.text.strip()
+    
+    # Проверка rate limit
+    allowed, error_msg = check_rate_limit(user_id)
+    if not allowed:
+        await message.answer(error_msg)
+        logger.warning(f"Rate limit exceeded for user {user_id}")
+        return
     
     # Проверка текста
     if not text_content:
@@ -97,9 +111,12 @@ async def handle_text_message(message: Message):
         # Получаем настройку сетки
         grid_enabled = user.get('grid_enabled', False)
         
-        # Генерируем PDF
+        # Генерируем PDF асинхронно в отдельном потоке
         start_time = time.time()
-        pdf_path = generate_pdf_for_job(
+        loop = asyncio.get_event_loop()
+        pdf_path = await loop.run_in_executor(
+            pdf_executor,
+            generate_pdf_for_job,
             job_id, 
             text_content, 
             user['font_path'], 
@@ -107,6 +124,11 @@ async def handle_text_message(message: Message):
             grid_enabled
         )
         execution_time_ms = int((time.time() - start_time) * 1000)
+        
+        # Записываем метрики
+        metrics.record_pdf_time(execution_time_ms)
+        metrics.record_request(user_id)
+        logger.info(f"PDF generated for user {user_id}, job {job_id}, time: {execution_time_ms}ms")
         
         # Обновляем путь к PDF в БД
         update_job_pdf_path(job_id, pdf_path, execution_time_ms)
@@ -135,6 +157,11 @@ async def handle_text_message(message: Message):
             update_job_status_failed(job_id)
         
     except Exception as e:
+        # Записываем ошибку в метрики
+        error_type = type(e).__name__
+        metrics.record_error(error_type)
+        logger.error(f"Error generating PDF for user {user_id}, job {job_id}: {str(e)}", exc_info=True)
+        
         if job_id:
             update_job_status_failed(job_id)
         from handlers.menu import get_main_menu_keyboard
@@ -146,5 +173,5 @@ async def handle_text_message(message: Message):
         if cursor:
             cursor.close()
         if conn:
-            conn.close()
+            return_db_connection(conn)
 

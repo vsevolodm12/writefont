@@ -27,24 +27,22 @@ async def process_format_callback(callback: CallbackQuery):
     
     # Обновляем формат в БД
     if update_user_page_format(user_id, format_type):
-        format_name = PAGE_FORMATS[format_type]
-        await callback.answer(f"✅ Формат установлен: {format_name}", show_alert=True)
+        # Без уведомлений - просто обновляем меню выбора формата
+        from handlers.menu import get_format_keyboard
+        from utils.db_utils import get_user_info
         
-        from handlers.menu import get_main_menu_keyboard
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        user = get_user_info(user_id)
         
-        next_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📝 Создать PDF", callback_data="menu_create_pdf")],
-            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
-        ])
+        text = "📄 Выбор формата страницы\n\n"
         
-        text = (
-            f"✅ Формат страницы изменен!\n\n"
-            f"📄 Формат: {format_name}\n\n"
-            "Теперь можете создавать PDF. Отправьте текст боту или используйте кнопку ниже."
-        )
+        if user:
+            current_format = PAGE_FORMATS.get(user['page_format'], user['page_format'] or 'A4')
+            text += f"Текущий формат: {current_format}\n\n"
         
-        await callback.message.edit_text(text, reply_markup=next_keyboard)
+        text += "Выберите формат:"
+        
+        await callback.message.edit_text(text, reply_markup=get_format_keyboard())
+        await callback.answer()  # Тихий ответ без текста
     else:
         await callback.answer("❌ Ошибка при обновлении формата.", show_alert=True)
 

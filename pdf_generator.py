@@ -62,7 +62,10 @@ def check_font_supports_char(font_path: str, char: str) -> bool:
 
 
 def register_font(font_path: str):
-    """Регистрирует пользовательский шрифт в ReportLab"""
+    """Регистрирует пользовательский шрифт в ReportLab (использует кэш)"""
+    # Используем кэширование шрифтов для производительности
+    from utils.font_cache import get_cached_font_name
+    
     if not font_path:
         raise ValueError("Путь к шрифту не указан")
     
@@ -77,14 +80,9 @@ def register_font(font_path: str):
     if not any(font_path.endswith(ext) for ext in valid_extensions):
         raise ValueError(f"Неподдерживаемый формат шрифта. Используйте .ttf или .otf")
     
-    font_name = os.path.basename(font_path).replace('.ttf', '').replace('.otf', '').replace('.TTF', '').replace('.OTF', '')
-    # Убираем спецсимволы из имени шрифта
-    font_name = re.sub(r'[^a-zA-Z0-9_]', '_', font_name)
-    
+    # Используем кэшированный шрифт
     try:
-        # Регистрируем шрифт - ReportLab автоматически обрабатывает Unicode
-        font_obj = TTFont(font_name, font_path)
-        pdfmetrics.registerFont(font_obj)
+        font_name = get_cached_font_name(font_path)
         return font_name
     except Exception as e:
         raise Exception(f"Ошибка регистрации шрифта: {str(e)}")
@@ -177,21 +175,37 @@ def generate_grid_background(c, page_size, cell_size=5*mm):
     width, height = page_size
     margin = 15 * mm
     
-    # Вертикальные линии
-    x = margin
-    while x <= width - margin:
-        c.setStrokeColor(colors.Color(0.9, 0.9, 0.9))
-        c.setLineWidth(0.3)
-        c.line(x, margin, x, height - margin)
-        x += cell_size
+    # Вычисляем рабочую область (область внутри отступов)
+    work_width = width - 2 * margin
+    work_height = height - 2 * margin
     
-    # Горизонтальные линии
-    y = margin
-    while y <= height - margin:
-        c.setStrokeColor(colors.Color(0.9, 0.9, 0.9))
-        c.setLineWidth(0.3)
+    # Вычисляем количество полных клеток, которые помещаются
+    num_vertical_cells = int(work_width / cell_size)
+    num_horizontal_cells = int(work_height / cell_size)
+    
+    # Вычисляем оставшееся пространство и распределяем его равномерно для симметрии
+    remaining_vertical = work_width - (num_vertical_cells * cell_size)
+    remaining_horizontal = work_height - (num_horizontal_cells * cell_size)
+    
+    # Отступ для симметричного выравнивания
+    vertical_offset = remaining_vertical / 2
+    horizontal_offset = remaining_horizontal / 2
+    
+    # Начальные координаты с учетом симметричного выравнивания
+    start_x = margin + vertical_offset
+    start_y = margin + horizontal_offset
+    
+    # Рисуем вертикальные линии (включая первую и последнюю)
+    c.setStrokeColor(colors.Color(0.9, 0.9, 0.9))
+    c.setLineWidth(0.3)
+    for i in range(num_vertical_cells + 1):
+        x = start_x + i * cell_size
+        c.line(x, margin, x, height - margin)
+    
+    # Рисуем горизонтальные линии (включая первую и последнюю)
+    for i in range(num_horizontal_cells + 1):
+        y = start_y + i * cell_size
         c.line(margin, y, width - margin, y)
-        y += cell_size
 
 
 def generate_pdf(text_content: str, font_path: str, page_format: str, output_path: str, grid_enabled: bool = False):
@@ -366,8 +380,11 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                                 if y < margin + line_height:
                                     c.showPage()
                                     if grid_enabled:
-                                        generate_grid_background(c, page_size)
-                                    y = height - margin
+                                        generate_grid_background(c, page_size, cell_size)
+                                        text_baseline_offset = font_size * 0.85 if grid_enabled else 0
+                                        y = height - margin - cell_size + text_baseline_offset if grid_enabled else height - margin
+                                    else:
+                                        y = height - margin
                                 
                                 current_x = x + indent_first_line if first_line_in_paragraph else x
                                 safe_draw_string(c, current_x, y, temp_word, font_name, font_size, font_path)
@@ -426,8 +443,11 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                 if y < margin + line_height:
                     c.showPage()
                     if grid_enabled:
-                        generate_grid_background(c, page_size)
-                    y = height - margin
+                        generate_grid_background(c, page_size, cell_size)
+                        text_baseline_offset = font_size * 0.85 if grid_enabled else 0
+                        y = height - margin - cell_size + text_baseline_offset if grid_enabled else height - margin
+                    else:
+                        y = height - margin
                 
                 safe_draw_string(c, current_x, y, words_line, font_name, font_size, font_path)
                 y -= line_height
