@@ -27,22 +27,32 @@ async def process_format_callback(callback: CallbackQuery):
     
     # Обновляем формат в БД
     if update_user_page_format(user_id, format_type):
-        # Без уведомлений - просто обновляем меню выбора формата
-        from handlers.menu import get_format_keyboard
-        from utils.db_utils import get_user_info
-        
+        # После выбора формата возвращаем в главное меню
+        from handlers.menu import get_main_menu_keyboard
         user = get_user_info(user_id)
         
-        text = "📄 Выбор формата страницы\n\n"
+        # Сообщение как в меню
+        welcome_text = (
+            "👋 Главное меню\n\n"
+            "📋 Текущие настройки:\n"
+        )
         
-        if user:
-            current_format = PAGE_FORMATS.get(user['page_format'], user['page_format'] or 'A4')
-            text += f"Текущий формат: {current_format}\n\n"
+        if user and user.get('font_path'):
+            font_name = user['font_path'].split('/')[-1]
+            welcome_text += f"✓ Шрифт: {font_name}\n"
+        else:
+            welcome_text += "⚠ Шрифт не загружен\n"
         
-        text += "Выберите формат:"
+        current_format = PAGE_FORMATS.get(user.get('page_format') if user else None, (user and user.get('page_format')) or 'A4')
+        welcome_text += f"✓ Формат: {current_format}\n"
         
-        await callback.message.edit_text(text, reply_markup=get_format_keyboard())
-        await callback.answer()  # Тихий ответ без текста
+        grid_enabled = (user or {}).get('grid_enabled', False)
+        grid_status = "✓ Включен" if grid_enabled else "✗ Выключен"
+        welcome_text += f"✓ Фон клетка: {grid_status}\n\n"
+        welcome_text += "Выберите действие:"
+        
+        await callback.message.edit_text(welcome_text, reply_markup=get_main_menu_keyboard(grid_enabled))
+        await callback.answer(f"✅ Формат установлен: {current_format}")
     else:
         await callback.answer("❌ Ошибка при обновлении формата.", show_alert=True)
 
