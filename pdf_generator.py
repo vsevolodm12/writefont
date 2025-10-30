@@ -289,26 +289,21 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
     width, height = page_size
     margin = 15 * mm
     cell_size = 5 * mm  # Базовый размер клетки сетки
-    indent_first_line = 10 * mm  # Красная строка
+    indent_first_line = 0  # Красная строка отключена, общий левый отступ = 2 клетки
     line_height = 6 * mm
-    font_size = 14  # Увеличен размер шрифта
-    paragraph_spacing = 3 * mm  # Отступ между абзацами
+    font_size = 12
+    paragraph_spacing = 3 * mm
     
     # Рисуем сетку если нужно (ДО текста, чтобы она была фоном)
     if grid_enabled:
         generate_grid_background(c, page_size, cell_size)
-        # Если есть сетка, выравниваем текст внутри первой клетки снизу
-        # В ReportLab текст рисуется ВВЕРХ от базовой линии Y
-        # Размер шрифта 14pt = примерно 4.93mm, клетка ~5mm
-        # Базовая линия должна быть в верхней части клетки, чтобы текст рисовался вниз и помещался внутрь
-        actual_cell_height = get_actual_cell_height(page_size, cell_size)
-        # Вычисляем верхнюю границу последней клетки снизу и ставим базовую линию чуть ниже
-        # Небольшой отступ от верхнего края клетки (0.5mm), чтобы текст не прилипал к линии
-        y = height - margin - 0.5 * mm
+        # Фиксированная сетка: опираемся на базовый размер клетки
+        y = height - margin - (2 * cell_size) + 1.0 * mm  # 1 пустая клетка сверху
+        x = margin + 2 * cell_size                         # 2 клетки слева
+        line_height = cell_size                            # строка = 1 клетка
     else:
         y = height - margin
-    
-    x = margin
+        x = margin + 2 * cell_size
     
     # Обрабатываем текст: разбиваем на абзацы
     # Поддерживаем обычные переносы строк как абзацы
@@ -380,10 +375,9 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
             words = clean_line.split()
             current_line = []
             current_width = 0
-            max_width = width - 2 * margin
-            
-            # Учитываем красную строку
-            effective_max_width = max_width - indent_first_line if first_line_in_paragraph else max_width
+            # Доступная ширина текста с учетом левого отступа и правого поля
+            max_width = width - x - margin
+            effective_max_width = max_width
             
             for word in words:
                 # Используем вариативные варианты символов
@@ -395,18 +389,14 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                 # Если одно слово шире страницы, разбиваем на части
                 if single_word_width > effective_max_width:
                     if current_line:
-                        current_x = x + indent_first_line if first_line_in_paragraph else x
+                        current_x = x
                         words_line = ' '.join(current_line)
                         
                         if y < margin + line_height:
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size)
-                                if grid_enabled:
-                                    # Базовая линия чуть ниже верхнего края последней клетки
-                                    y = height - margin - 0.5 * mm
-                                else:
-                                    y = height - margin
+                                y = height - margin - (2 * cell_size) + 1.0 * mm
                             else:
                                 y = height - margin
                         
@@ -432,12 +422,11 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                                     c.showPage()
                                     if grid_enabled:
                                         generate_grid_background(c, page_size, cell_size)
-                                        text_baseline_offset = font_size * 0.85 if grid_enabled else 0
-                                        y = height - margin - cell_size + text_baseline_offset if grid_enabled else height - margin
+                                        y = height - margin - (2 * cell_size) + 1.0 * mm
                                     else:
                                         y = height - margin
                                 
-                                current_x = x + indent_first_line if first_line_in_paragraph else x
+                                current_x = x
                                 safe_draw_string(c, current_x, y, temp_word, font_name, font_size, font_path)
                                 y -= line_height
                                 first_line_in_paragraph = False
@@ -448,15 +437,11 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size)
-                                if grid_enabled:
-                                    # Базовая линия чуть ниже верхнего края последней клетки
-                                    y = height - margin - 0.5 * mm
-                                else:
-                                    y = height - margin
+                                y = height - margin - (2 * cell_size) + 1.0 * mm
                             else:
                                 y = height - margin
                         
-                        current_x = x + indent_first_line if first_line_in_paragraph else x
+                        current_x = x
                         safe_draw_string(c, current_x, y, temp_word, font_name, font_size, font_path)
                         y -= line_height
                         first_line_in_paragraph = False
@@ -468,18 +453,14 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                     current_width += word_width
                 else:
                     if current_line:
-                        current_x = x + indent_first_line if first_line_in_paragraph else x
+                        current_x = x
                         words_line = ' '.join(current_line)
                         
                         if y < margin + line_height:
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size)
-                                if grid_enabled:
-                                    # Базовая линия чуть ниже верхнего края последней клетки
-                                    y = height - margin - 0.5 * mm
-                                else:
-                                    y = height - margin
+                                y = height - margin - (2 * cell_size) + 1.0 * mm
                             else:
                                 y = height - margin
                         
@@ -494,15 +475,14 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
             
             # Рисуем последнюю строку абзаца
             if current_line:
-                current_x = x + indent_first_line if first_line_in_paragraph else x
+                current_x = x
                 words_line = ' '.join(current_line)
                 
                 if y < margin + line_height:
                     c.showPage()
                     if grid_enabled:
                         generate_grid_background(c, page_size, cell_size)
-                        text_baseline_offset = font_size * 0.85 if grid_enabled else 0
-                        y = height - margin - cell_size + text_baseline_offset if grid_enabled else height - margin
+                        y = height - margin - (2 * cell_size) + 1.0 * mm
                     else:
                         y = height - margin
                 
