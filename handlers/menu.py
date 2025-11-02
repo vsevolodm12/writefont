@@ -5,7 +5,7 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
-from utils.db_utils import get_or_create_user, get_user_info
+from utils.db_utils import get_or_create_user, get_user_info, reset_user_fonts
 from config import PAGE_FORMATS
 
 router = Router()
@@ -24,9 +24,6 @@ def get_main_menu_keyboard(grid_enabled: bool = False):
         ],
         [
             InlineKeyboardButton(text="📝 Создать PDF", callback_data="menu_create_pdf")
-        ],
-        [
-            InlineKeyboardButton(text="ℹ️ О боте", callback_data="menu_info")
         ]
     ])
     return keyboard
@@ -47,7 +44,6 @@ def get_format_keyboard():
             InlineKeyboardButton(text="📄 A4", callback_data="format_A4"),
             InlineKeyboardButton(text="📄 A5", callback_data="format_A5")
         ],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_main")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
     ])
     return keyboard
@@ -101,22 +97,30 @@ async def cmd_start(message: Message):
         user = get_or_create_user(user_id)
         user_info = get_user_info(user_id)
         
-        welcome_text = (
-            "👋 Добро пожаловать в бот для генерации PDF-конспектов!\n\n"
-            "📋 Текущие настройки:\n"
-        )
+        welcome_text = "📋 Текущие настройки:\n\n"
         
+        # Показываем все шрифты по порядку
+        all_fonts = []
         if user['font_path']:
-            font_name = user['font_path'].split('/')[-1]
-            welcome_text += f"✓ Шрифт: {font_name}\n"
+            all_fonts.append(user['font_path'])
+        variant_fonts = user_info.get('variant_fonts', [])
+        if variant_fonts:
+            all_fonts.extend(variant_fonts)
+        
+        if all_fonts:
+            welcome_text += "Шрифты:\n"
+            for idx, font_path in enumerate(all_fonts, 1):
+                font_name = font_path.split('/')[-1]
+                welcome_text += f"{idx}. {font_name}\n"
         else:
-            welcome_text += "⚠ Шрифт не загружен\n"
+            welcome_text += "Шрифты не загружены\n"
         
         format_name = PAGE_FORMATS.get(user['page_format'], user['page_format'] or 'A4')
-        welcome_text += f"✓ Формат: {format_name}\n"
-        
         grid_enabled = user_info.get('grid_enabled', False) if user_info else False
-        grid_status = "✓ Включен" if grid_enabled else "✗ Выключен"
+        grid_status = "Включен" if grid_enabled else "Выключен"
+        
+        welcome_text += f"\nНастройки:\n"
+        welcome_text += f"✓ Формат: {format_name}\n"
         welcome_text += f"✓ Фон клетка: {grid_status}\n\n"
         
         welcome_text += "Выберите действие:"
@@ -139,22 +143,30 @@ async def menu_main(callback: CallbackQuery):
     user = get_or_create_user(user_id)
     user_info = get_user_info(user_id)
     
-    welcome_text = (
-        "👋 Главное меню\n\n"
-        "📋 Текущие настройки:\n"
-    )
+    welcome_text = "📋 Текущие настройки:\n\n"
     
+    # Показываем все шрифты по порядку
+    all_fonts = []
     if user['font_path']:
-        font_name = user['font_path'].split('/')[-1]
-        welcome_text += f"✓ Шрифт: {font_name}\n"
+        all_fonts.append(user['font_path'])
+    variant_fonts = user_info.get('variant_fonts', [])
+    if variant_fonts:
+        all_fonts.extend(variant_fonts)
+    
+    if all_fonts:
+        welcome_text += "Шрифты:\n"
+        for idx, font_path in enumerate(all_fonts, 1):
+            font_name = font_path.split('/')[-1]
+            welcome_text += f"{idx}. {font_name}\n"
     else:
-        welcome_text += "⚠ Шрифт не загружен\n"
+        welcome_text += "Шрифты не загружены\n"
     
     format_name = PAGE_FORMATS.get(user['page_format'], user['page_format'] or 'A4')
-    welcome_text += f"✓ Формат: {format_name}\n"
-    
     grid_enabled = user_info.get('grid_enabled', False) if user_info else False
-    grid_status = "✓ Включен" if grid_enabled else "✗ Выключен"
+    grid_status = "Включен" if grid_enabled else "Выключен"
+    
+    welcome_text += f"\nНастройки:\n"
+    welcome_text += f"✓ Формат: {format_name}\n"
     welcome_text += f"✓ Фон клетка: {grid_status}\n\n"
     
     welcome_text += "Выберите действие:"
@@ -167,29 +179,37 @@ async def menu_upload_font(callback: CallbackQuery):
     """Меню загрузки шрифта"""
     user = get_user_info(callback.from_user.id)
     
-    text = "📎 Загрузка шрифта\n\n"
+    text = "📎 Загрузка шрифтов\n\n"
     
+    # Показываем все шрифты по порядку
+    all_fonts = []
     if user and user['font_path']:
-        font_name = user['font_path'].split('/')[-1]
-        text += f"Текущий шрифт: {font_name}\n\n"
-    else:
-        text += "⚠ Шрифт еще не загружен\n\n"
+        all_fonts.append(user['font_path'])
+    variant_fonts = user.get('variant_fonts', [])
+    if variant_fonts:
+        all_fonts.extend(variant_fonts)
     
-    text += "Отправьте файл с расширением .ttf или .otf в следующем сообщении."
+    if all_fonts:
+        text += "Загружено шрифтов:\n"
+        for idx, font_path in enumerate(all_fonts, 1):
+            font_name = font_path.split('/')[-1]
+            text += f"{idx}. {font_name}\n"
+        text += "\n"
+    else:
+        text += "⚠ Шрифты еще не загружены\n\n"
+    
+    text += (
+        "💡 Для реалистичного почерка загрузите 2-3 похожих шрифта.\n\n"
+        "📤 Отправьте файлы .ttf или .otf по одному."
+    )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_main")],
+        [InlineKeyboardButton(text="🗑 Сбросить шрифты", callback_data="reset_fonts")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
     ])
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
-    
-    # Отправляем отдельное сообщение с инструкцией
-    await callback.message.answer(
-        "📤 Отправьте файл прямо сейчас:",
-        reply_markup=keyboard
-    )
 
 
 @router.callback_query(F.data == "menu_set_format")
@@ -203,7 +223,7 @@ async def menu_set_format(callback: CallbackQuery):
         current_format = PAGE_FORMATS.get(user['page_format'], user['page_format'] or 'A4')
         text += f"Текущий формат: {current_format}\n\n"
     
-    text += "Выберите формат:"
+    text += "Выберите формат страницы:"
     
     await callback.message.edit_text(text, reply_markup=get_format_keyboard())
     await callback.answer()
@@ -222,61 +242,42 @@ async def menu_create_pdf(callback: CallbackQuery):
     ready_to_create = True
     
     if not user or not user['font_path']:
-        issues.append("❌ Шрифт не загружен")
+        issues.append("Шрифт не загружен")
         ready_to_create = False
     else:
-        font_name = user['font_path'].split('/')[-1]
-        text += f"✓ Шрифт: {font_name}\n"
+        text += "✅ Шрифты загружены\n"
     
     if not user or not user['page_format']:
-        issues.append("❌ Формат не выбран")
+        issues.append("Формат не выбран")
         ready_to_create = False
     else:
         format_name = PAGE_FORMATS.get(user['page_format'], user['page_format'])
-        text += f"✓ Формат: {format_name}\n"
+        text += f"✅ Формат: {format_name}\n"
     
     if issues:
-        text += "\n" + "\n".join(issues)
+        text += "\n⚠ Ошибки:\n" + "\n".join([f"• {issue}" for issue in issues])
         text += "\n\nИсправьте настройки и попробуйте снова."
     else:
-        text += "\n✅ Все готово!\n\nОтправьте текст для генерации PDF в следующем сообщении."
+        text += "\n✅ Все готово!\n\nОтправьте текст для генерации PDF:"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_main")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
     ])
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
     
-    if ready_to_create:
-        await callback.message.answer(
-            "💬 Отправьте текст прямо сейчас:",
-            reply_markup=keyboard
-        )
 
 
-@router.callback_query(F.data == "menu_info")
-async def menu_info(callback: CallbackQuery):
-    """Информация о боте"""
-    text = (
-        "ℹ️ О боте\n\n"
-        "Этот бот генерирует PDF-конспекты с вашим рукописным шрифтом.\n\n"
-        "📋 Доступные команды:\n"
-        "• /start - главное меню\n"
-        "• /menu - главное меню\n\n"
-        "📝 Как использовать:\n"
-        "1. Загрузите TTF/OTF шрифт\n"
-        "2. Выберите формат страницы (A4 или Тетрадь)\n"
-        "3. Отправьте текст боту\n\n"
-        "Бот создаст PDF с вашим шрифтом!"
-    )
+@router.callback_query(F.data == "reset_fonts")
+async def reset_fonts_handler(callback: CallbackQuery):
+    """Обработчик сброса всех шрифтов"""
+    user_id = callback.from_user.id
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_main")],
-        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
-    ])
-    
-    await callback.message.edit_text(text, reply_markup=keyboard)
-    await callback.answer()
+    if reset_user_fonts(user_id):
+        await callback.answer("✅ Шрифты сброшены")
+        await menu_upload_font(callback)
+    else:
+        await callback.answer("❌ Ошибка при сбросе шрифтов", show_alert=True)
+
 

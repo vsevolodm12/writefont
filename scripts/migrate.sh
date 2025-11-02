@@ -21,3 +21,6 @@ export DB_NAME="${DB_NAME:-consp_bot}"
 
 # Прогон миграций до последней версии
 alembic upgrade head
+
+
+

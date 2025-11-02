@@ -13,52 +13,6 @@ from config import FONTS_DIR, GENERATED_DIR
 import os
 import re
 import random
-from fontTools.ttLib import TTFont as FTTTFont
-
-
-def get_variant_character(font_path: str, char: str):
-    """
-    Проверяет доступные варианты символа в вариативном шрифте
-    и возвращает случайный вариант если доступен
-    """
-    try:
-        # Открываем шрифт с помощью fontTools
-        font = FTTTFont(font_path)
-        cmap = font.getBestCmap()
-        
-        if not cmap:
-            return char
-        
-        # Получаем кодировку символа
-        char_code = ord(char)
-        
-        # Проверяем наличие символа в CMAP
-        if char_code in cmap:
-            # Для вариативных шрифтов можно проверить альтернативные глифы
-            # Это упрощенная версия - просто возвращаем оригинал
-            # В реальной реализации можно использовать GSUB таблицы
-            return char
-        
-        return char
-    except Exception:
-        # В случае ошибки возвращаем оригинальный символ
-        return char
-
-
-def check_font_supports_char(font_path: str, char: str) -> bool:
-    """Проверяет поддерживает ли шрифт данный символ"""
-    try:
-        font = FTTTFont(font_path)
-        cmap = font.getBestCmap()
-        if cmap and ord(char) in cmap:
-            return True
-        # Проверяем через unicode
-        for table in font['cmap'].tables:
-            if ord(char) in table.cmap:
-                return True
-        return False
-    except Exception:
-        return True  # В случае ошибки предполагаем поддержку
 
 
 def register_font(font_path: str):
@@ -110,9 +64,10 @@ def draw_formatted_text(c, x, y, text, font_name, font_size, bold=False, italic=
         c.line(x, line_y, x + text_width, line_y)
 
 
-def safe_draw_string(c, x, y, text, font_name, font_size, font_path):
+def safe_draw_string(c, x, y, text, font_name, font_size, font_path, font_names=None):
     """
     Безопасно рисует строку, используя TextObject для лучшей поддержки Unicode
+    Если font_names указан - случайно выбирает шрифт для каждой буквы
     """
     # Убираем символы разметки Markdown для рисования
     clean_text = text
@@ -122,12 +77,25 @@ def safe_draw_string(c, x, y, text, font_name, font_size, font_path):
     clean_text = re.sub(r'\*(.*?)\*', r'\1', clean_text)  # Убираем *
     clean_text = re.sub(r'_(.*?)_', r'\1', clean_text)  # Убираем _
     
-    # Используем TextObject - он правильно обрабатывает Unicode и пользовательские шрифты
-    # textOut не добавляет автоматический перенос строки, что нам нужно
-    t = c.beginText(x, y)
-    t.setFont(font_name, font_size)
-    t.textOut(clean_text)
-    c.drawText(t)
+    # Если есть несколько шрифтов - рисуем каждую букву разным шрифтом
+    if font_names and len(font_names) > 1:
+        current_x = x
+        t = c.beginText(current_x, y)
+        
+        for char in clean_text:
+            # Выбираем случайный шрифт для каждого символа
+            random_font = random.choice(list(font_names.values()))
+            t.setFont(random_font, font_size)
+            t.textOut(char)
+        
+        c.drawText(t)
+    else:
+        # Используем TextObject - он правильно обрабатывает Unicode и пользовательские шрифты
+        # textOut не добавляет автоматический перенос строки, что нам нужно
+        t = c.beginText(x, y)
+        t.setFont(font_name, font_size)
+        t.textOut(clean_text)
+        c.drawText(t)
 
 
 def draw_line_with_formatting(c, x, y, line_text, font_name, font_size, font_path):
@@ -254,16 +222,17 @@ def generate_grid_background(c, page_size, cell_size=5*mm):
         c.line(grid_start_x, y, grid_end_x, y)
 
 
-def generate_pdf(text_content: str, font_path: str, page_format: str, output_path: str, grid_enabled: bool = False):
+def generate_pdf(text_content: str, font_path: str, page_format: str, output_path: str, grid_enabled: bool = False, variant_fonts: list = None):
     """
-    Генерирует PDF с текстом используя пользовательский шрифт
+    Генерирует PDF с текстом используя пользовательский шрифт и вариативные шрифты
     
     Args:
         text_content: Текст для размещения в PDF
-        font_path: Путь к TTF-шрифту
+        font_path: Путь к основному TTF-шрифту
         page_format: Формат страницы ('A4' или 'A5')
         output_path: Путь для сохранения PDF файла
         grid_enabled: Включить фоновую сетку
+        variant_fonts: Список путей к вариативным шрифтам для случайного выбора
     """
     # Проверка текста
     if not text_content or not text_content.strip():
@@ -273,8 +242,19 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
     if page_format not in ['A4', 'A5']:
         raise ValueError(f"Неподдерживаемый формат страницы: {page_format}. Используйте 'A4' или 'A5'")
     
-    # Регистрируем шрифт
-    font_name = register_font(font_path)
+    # Подготавливаем список всех шрифтов (основной + варианты)
+    all_fonts = [font_path]
+    if variant_fonts:
+        all_fonts.extend(variant_fonts)
+    
+    # Регистрируем все шрифты и получаем их имена
+    font_names = {}
+    for fp in all_fonts:
+        font_name = register_font(fp)
+        font_names[fp] = font_name
+    
+    # Основной шрифт используется по умолчанию
+    main_font_name = font_names[font_path]
     
     # Определяем размеры страницы
     if page_format == 'A5':
@@ -380,11 +360,8 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
             effective_max_width = max_width
             
             for word in words:
-                # Используем вариативные варианты символов
-                word_variant = ''.join([get_variant_character(font_path, char) for char in word])
-                
-                word_width = c.stringWidth(word_variant + ' ', font_name, font_size)
-                single_word_width = c.stringWidth(word_variant, font_name, font_size)
+                word_width = c.stringWidth(word + ' ', font_name, font_size)
+                single_word_width = c.stringWidth(word, font_name, font_size)
                 
                 # Если одно слово шире страницы, разбиваем на части
                 if single_word_width > effective_max_width:
@@ -410,7 +387,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                         effective_max_width = max_width
                     
                     # Разбиваем длинное слово посимвольно
-                    chars = list(word_variant)
+                    chars = list(word)
                     temp_word = ''
                     for char in chars:
                         char_width = c.stringWidth(temp_word + char, font_name, font_size)
@@ -427,7 +404,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                                         y = height - margin
                                 
                                 current_x = x
-                                safe_draw_string(c, current_x, y, temp_word, font_name, font_size, font_path)
+                                safe_draw_string(c, current_x, y, temp_word, font_name, font_size, font_path, font_names)
                                 y -= line_height
                                 first_line_in_paragraph = False
                                 effective_max_width = max_width
@@ -442,14 +419,14 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                                 y = height - margin
                         
                         current_x = x
-                        safe_draw_string(c, current_x, y, temp_word, font_name, font_size, font_path)
+                        safe_draw_string(c, current_x, y, temp_word, font_name, font_size, font_path, font_names)
                         y -= line_height
                         first_line_in_paragraph = False
                         effective_max_width = max_width
                     
                     current_width = 0
                 elif current_width + word_width <= effective_max_width:
-                    current_line.append(word_variant)
+                    current_line.append(word)
                     current_width += word_width
                 else:
                     if current_line:
@@ -464,13 +441,13 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                             else:
                                 y = height - margin
                         
-                        safe_draw_string(c, current_x, y, words_line, font_name, font_size, font_path)
+                        safe_draw_string(c, current_x, y, words_line, font_name, font_size, font_path, font_names)
                         y -= line_height
                         
                         first_line_in_paragraph = False
                         effective_max_width = max_width
                     
-                    current_line = [word_variant]
+                    current_line = [word]
                     current_width = word_width
             
             # Рисуем последнюю строку абзаца
@@ -486,7 +463,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                     else:
                         y = height - margin
                 
-                safe_draw_string(c, current_x, y, words_line, font_name, font_size, font_path)
+                safe_draw_string(c, current_x, y, words_line, font_name, font_size, font_path, font_names)
                 y -= line_height
                 first_line_in_paragraph = False
         
@@ -498,7 +475,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
     c.save()
 
 
-def generate_pdf_for_job(job_id: int, text_content: str, font_path: str, page_format: str, grid_enabled: bool = False) -> str:
+def generate_pdf_for_job(job_id: int, text_content: str, font_path: str, page_format: str, grid_enabled: bool = False, variant_fonts: list = None) -> str:
     """
     Генерирует PDF для задачи из jobs таблицы
     
@@ -521,6 +498,6 @@ def generate_pdf_for_job(job_id: int, text_content: str, font_path: str, page_fo
     os.makedirs(GENERATED_DIR, exist_ok=True)
     output_path = os.path.join(GENERATED_DIR, f"job_{job_id}.pdf")
     
-    generate_pdf(text_content, font_path, page_format, output_path, grid_enabled)
+    generate_pdf(text_content, font_path, page_format, output_path, grid_enabled, variant_fonts)
     
     return output_path

@@ -42,3 +42,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute(sa.text("DROP TABLE IF EXISTS jobs"))
     op.execute(sa.text("DROP TABLE IF EXISTS users"))
+
+
+

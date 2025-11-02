@@ -5,9 +5,11 @@
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
-from utils.db_utils import update_user_font, save_font_file
+from utils.db_utils import update_user_font, save_font_file, add_variant_font, get_user_info
 import os
+import logging
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 
@@ -41,30 +43,56 @@ async def handle_font_file(message: Message, file_ext: str):
         # Сохраняем файл
         font_path = save_font_file(file_data, file_name)
         
-        # Обновляем путь к шрифту в БД
+        # Получаем информацию о пользователе для проверки существующих шрифтов
+        from utils.db_utils import get_user_info
+        user = get_user_info(user_id)
+        
+        # Если у пользователя уже есть основной шрифт, новый файл добавляется как вариативный
+        if user and user.get('font_path'):
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
+            ])
+            
+            if add_variant_font(user_id, font_path):
+                await message.answer(
+                    f"✅ Шрифт добавлен\n\n"
+                    f"📝 {file_name}\n\n"
+                    f"💡 Для лучшего эффекта отправьте еще 1-2 похожих шрифта.",
+                    reply_markup=keyboard
+                )
+            else:
+                await message.answer("❌ Ошибка при добавлении шрифта.", reply_markup=keyboard)
+            return
+        
+        # Обновляем путь к шрифту в БД (первый/основной шрифт)
         if update_user_font(user_id, font_path):
             from handlers.menu import get_main_menu_keyboard
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
             
-            success_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="📄 Выбрать формат", callback_data="menu_set_format")],
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
             ])
             
             await message.answer(
-                f"✅ Шрифт успешно загружен!\n\n"
-                f"📝 Файл: {file_name}\n\n"
-                f"Теперь выберите формат страницы.",
-                reply_markup=success_keyboard
+                f"✅ Шрифт загружен\n\n"
+                f"📝 {file_name}\n\n"
+                f"💡 Для реалистичного почерка отправьте еще 1-2 похожих шрифта.",
+                reply_markup=keyboard
             )
         else:
-            from handlers.menu import get_back_keyboard
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
+            ])
             await message.answer(
-                "❌ Ошибка при сохранении шрифта в базу данных.",
-                reply_markup=get_back_keyboard("menu_main")
+                "❌ Ошибка при сохранении шрифта",
+                reply_markup=keyboard
             )
             
     except Exception as e:
+        logger.error(f"Ошибка при загрузке шрифта для пользователя {user_id}: {e}", exc_info=True)
         await message.answer(f"❌ Ошибка при загрузке шрифта: {str(e)}")
 
 
@@ -91,4 +119,6 @@ async def handle_wrong_file_type(message: Message):
         f"Пожалуйста, отправьте файл с расширением .ttf или .otf\n\n"
         f"Используйте команду /upload_font для загрузки шрифта."
     )
+
+
 

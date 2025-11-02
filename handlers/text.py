@@ -52,8 +52,6 @@ async def handle_text_message(message: Message):
         from utils.db_utils import get_or_create_user
         user = get_or_create_user(user_id)
     
-    from handlers.menu import get_back_keyboard
-    
     # Проверка шрифта
     if not user['font_path']:
         from handlers.menu import get_main_menu_keyboard
@@ -111,6 +109,9 @@ async def handle_text_message(message: Message):
         # Получаем настройку сетки
         grid_enabled = user.get('grid_enabled', False)
         
+        # Получаем список вариативных шрифтов
+        variant_fonts = user.get('variant_fonts', [])
+        
         # Генерируем PDF асинхронно в отдельном потоке
         start_time = time.time()
         loop = asyncio.get_event_loop()
@@ -121,7 +122,8 @@ async def handle_text_message(message: Message):
             text_content, 
             user['font_path'], 
             user['page_format'],
-            grid_enabled
+            grid_enabled,
+            variant_fonts
         )
         execution_time_ms = int((time.time() - start_time) * 1000)
         
@@ -140,12 +142,12 @@ async def handle_text_message(message: Message):
             pdf_file = FSInputFile(pdf_path)
             await message.answer_document(
                 document=pdf_file,
-                caption=f"✅ PDF сгенерирован успешно!\n⏱ Время: {execution_time_ms}мс"
+                caption=f"✓ PDF сгенерирован\nВремя: {execution_time_ms}мс"
             )
             
             # Предлагаем создать еще один
             await message.answer(
-                "📝 Хотите создать еще один PDF?\nОтправьте новый текст.",
+                "💡 Отправьте новый текст:\nя создам еще один конспект",
                 reply_markup=get_main_menu_keyboard()
             )
         else:

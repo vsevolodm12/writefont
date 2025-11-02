@@ -38,3 +38,6 @@ def downgrade() -> None:
     op.execute(sa.text("DROP INDEX IF EXISTS idx_user_recent_fonts_user_time"))
     op.execute(sa.text("DROP TABLE IF EXISTS user_recent_fonts"))
     # Не удаляем колонку grid_enabled при даунгрейде (чтобы не терять данные)
+
+
+

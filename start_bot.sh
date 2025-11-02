@@ -23,6 +23,22 @@ if [ -f "bot.pid" ]; then
     fi
 fi
 
+# Принудительно очищаем зависшие локальные процессы bot.py, чтобы исключить дубликаты
+if command -v pgrep >/dev/null 2>&1; then
+    RUNNING_PIDS=$(pgrep -f "python[0-9.]* .*bot.py" || true)
+    if [ -n "$RUNNING_PIDS" ]; then
+        echo "🧹 Найдены запущенные процессы bot.py, останавливаю..."
+        echo "$RUNNING_PIDS" | xargs -I {} kill {} 2>/dev/null || true
+        sleep 1
+        # Если остались — килл -9
+        REMAIN=$(pgrep -f "python[0-9.]* .*bot.py" || true)
+        if [ -n "$REMAIN" ]; then
+            echo "$REMAIN" | xargs -I {} kill -9 {} 2>/dev/null || true
+            sleep 1
+        fi
+    fi
+fi
+
 # Создаем директорию для логов если не существует
 mkdir -p logs
 
