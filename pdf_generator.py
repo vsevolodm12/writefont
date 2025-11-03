@@ -111,9 +111,11 @@ def draw_line_with_formatting(c, x, y, line_text, font_name, font_size, font_pat
     clean_text = re.sub(r'_(.*?)_', r'\1', clean_text)
     
     # Используем TextObject для рисования
+    # Важно: используем textOut, а не textLine, чтобы избежать автоматического переноса строки
+    # (textLine автоматически вычитает leading, что создает лишний интервал)
     t = c.beginText(x, y)
     t.setFont(font_name, font_size)
-    t.textLine(clean_text)
+    t.textOut(clean_text)
     c.drawText(t)
     
     # Проверяем есть ли подчеркнутые части в строке для рисования линии
@@ -270,20 +272,51 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
     margin = 15 * mm
     cell_size = 5 * mm  # Базовый размер клетки сетки
     indent_first_line = 0  # Красная строка отключена, общий левый отступ = 2 клетки
-    line_height = 6 * mm
-    font_size = 12
-    paragraph_spacing = 3 * mm
+    
+    # Вычисляем реальную высоту клетки (для всех режимов для единообразия)
+    actual_cell_height = get_actual_cell_height(page_size, cell_size)
+    
+    # Единые параметры текста для всех режимов (A4, A5, с клеткой и без)
+    # Размер шрифта увеличен в 2 раза
+    font_size = 32
+    
+    # Межстрочный интервал: 1 клетка для текста + 1 клетка для пробела = 2 клетки
+    # Используем actual_cell_height для точного соответствия (даже без сетки)
+    line_height = 2 * actual_cell_height
+    
+    # Отступ между абзацами: 2 клетки
+    paragraph_spacing = 2 * actual_cell_height
     
     # Рисуем сетку если нужно (ДО текста, чтобы она была фоном)
     if grid_enabled:
         generate_grid_background(c, page_size, cell_size)
-        # Фиксированная сетка: опираемся на базовый размер клетки
-        y = height - margin - (2 * cell_size) + 1.0 * mm  # 1 пустая клетка сверху
+        
+        # Привязка к низу клетки: начинаем с первой строки текста
+        # В ReportLab координаты идут снизу вверх, поэтому вычисляем от низа страницы
+        # Отступ сверху = 2 клетки, затем первая клетка для текста
+        grid_start_y = margin  # это отступ от верха
+        first_text_cell_index = 2  # пропускаем 2 клетки сверху
+        # Вычисляем позицию Y от низа страницы (в ReportLab координаты снизу вверх)
+        # Расстояние от верха = margin + (first_text_cell_index + 1) * actual_cell_height
+        distance_from_top = grid_start_y + (first_text_cell_index + 1) * actual_cell_height
+        y = height - distance_from_top  # Y координата от низа страницы
+        
         x = margin + 2 * cell_size                         # 2 клетки слева
-        line_height = cell_size                            # строка = 1 клетка
     else:
+        # Без сетки: начинаем с отступа сверху, но используем те же параметры текста
         y = height - margin
         x = margin + 2 * cell_size
+    
+    # Функция для получения начальной Y позиции при создании новой страницы
+    def get_initial_y():
+        if grid_enabled:
+            grid_start_y = margin
+            first_text_cell_index = 2
+            # Вычисляем позицию Y от низа страницы (в ReportLab координаты снизу вверх)
+            distance_from_top = grid_start_y + (first_text_cell_index + 1) * actual_cell_height
+            return height - distance_from_top
+        else:
+            return height - margin
     
     # Обрабатываем текст: разбиваем на абзацы
     # Поддерживаем обычные переносы строк как абзацы
@@ -369,16 +402,16 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                         current_x = x
                         words_line = ' '.join(current_line)
                         
+                        # Проверяем, достаточно ли места для строки ПЕРЕД рисованием
                         if y < margin + line_height:
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size)
-                                y = height - margin - (2 * cell_size) + 1.0 * mm
-                            else:
-                                y = height - margin
+                            y = get_initial_y()
                         
                         # Рисуем с форматированием
                         draw_line_with_formatting(c, current_x, y, words_line, font_name, font_size, font_path)
+                        # Переходим к следующей строке: вычитаем line_height (двигаемся вниз)
                         y -= line_height
                         
                         current_line = []
@@ -399,9 +432,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                                     c.showPage()
                                     if grid_enabled:
                                         generate_grid_background(c, page_size, cell_size)
-                                        y = height - margin - (2 * cell_size) + 1.0 * mm
-                                    else:
-                                        y = height - margin
+                                    y = get_initial_y()
                                 
                                 current_x = x
                                 safe_draw_string(c, current_x, y, temp_word, font_name, font_size, font_path, font_names)
@@ -414,9 +445,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size)
-                                y = height - margin - (2 * cell_size) + 1.0 * mm
-                            else:
-                                y = height - margin
+                            y = get_initial_y()
                         
                         current_x = x
                         safe_draw_string(c, current_x, y, temp_word, font_name, font_size, font_path, font_names)
@@ -437,9 +466,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size)
-                                y = height - margin - (2 * cell_size) + 1.0 * mm
-                            else:
-                                y = height - margin
+                            y = get_initial_y()
                         
                         safe_draw_string(c, current_x, y, words_line, font_name, font_size, font_path, font_names)
                         y -= line_height
@@ -459,9 +486,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                     c.showPage()
                     if grid_enabled:
                         generate_grid_background(c, page_size, cell_size)
-                        y = height - margin - (2 * cell_size) + 1.0 * mm
-                    else:
-                        y = height - margin
+                    y = get_initial_y()
                 
                 safe_draw_string(c, current_x, y, words_line, font_name, font_size, font_path, font_names)
                 y -= line_height
