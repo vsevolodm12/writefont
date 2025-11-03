@@ -68,6 +68,7 @@ def safe_draw_string(c, x, y, text, font_name, font_size, font_path, font_names=
     """
     Безопасно рисует строку, используя TextObject для лучшей поддержки Unicode
     Если font_names указан - случайно выбирает шрифт для каждой буквы
+    В одном слове одинаковые буквы не будут использовать один и тот же шрифт
     """
     # Убираем символы разметки Markdown для рисования
     clean_text = text
@@ -82,11 +83,49 @@ def safe_draw_string(c, x, y, text, font_name, font_size, font_path, font_names=
         current_x = x
         t = c.beginText(current_x, y)
         
-        for char in clean_text:
-            # Выбираем случайный шрифт для каждого символа
-            random_font = random.choice(list(font_names.values()))
-            t.setFont(random_font, font_size)
-            t.textOut(char)
+        # Разбиваем текст на слова (сохраняем пробелы и знаки препинания отдельно)
+        # Используем регулярное выражение для разделения на слова и не-слова
+        words = re.split(r'(\W)', clean_text)  # \W - все не-словесные символы
+        
+        for word in words:
+            if not word or not word.strip():  # Пробелы и знаки препинания рисуем обычным способом
+                if word:  # Если это не пустая строка (например, пробел или знак препинания)
+                    # Для пробелов и знаков используем любой случайный шрифт
+                    random_font = random.choice(list(font_names.values()))
+                    t.setFont(random_font, font_size)
+                    t.textOut(word)
+                continue
+            
+            # Для каждого слова отслеживаем использованные шрифты для каждой буквы
+            # Словарь: буква -> список использованных шрифтов для этой буквы в этом слове
+            used_fonts_per_char = {}
+            
+            for char in word:
+                available_fonts = list(font_names.values())
+                
+                # Если эта буква уже встречалась в слове, исключаем использованные шрифты
+                if char in used_fonts_per_char:
+                    # Получаем шрифты, которые уже использовались для этой буквы
+                    used_for_this_char = used_fonts_per_char[char]
+                    
+                    # Исключаем использованные шрифты из доступных
+                    available_fonts = [f for f in available_fonts if f not in used_for_this_char]
+                    
+                    # Если все шрифты уже использованы, разрешаем повторение
+                    # (это может случиться если буква повторяется больше раз, чем доступно шрифтов)
+                    if not available_fonts:
+                        available_fonts = list(font_names.values())
+                
+                # Выбираем случайный шрифт из доступных
+                random_font = random.choice(available_fonts)
+                
+                # Записываем, какой шрифт использован для этой буквы
+                if char not in used_fonts_per_char:
+                    used_fonts_per_char[char] = []
+                used_fonts_per_char[char].append(random_font)
+                
+                t.setFont(random_font, font_size)
+                t.textOut(char)
         
         c.drawText(t)
     else:
