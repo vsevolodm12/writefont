@@ -270,20 +270,19 @@ def draw_line_with_formatting(c, x, y, line_text, font_size, selector):
         c.line(x + start_width, line_y, x + start_width + underline_width, line_y)
 
 
-def get_actual_cell_height(page_size, cell_size=5*mm):
+def get_actual_cell_height(page_size, cell_size=5*mm, margin=15*mm):
     """
     Вычисляет реальную высоту клетки для выравнивания текста
     """
     from reportlab.lib.units import mm
     
     width, height = page_size
-    margin = 15 * mm
     work_height = height - 2 * margin
     num_horizontal_cells = int(work_height / cell_size)
     return work_height / float(num_horizontal_cells) if num_horizontal_cells > 0 else cell_size
 
 
-def generate_grid_background(c, page_size, cell_size=5*mm):
+def generate_grid_background(c, page_size, cell_size=5*mm, margin=15*mm):
     """
     Генерирует фоновую сетку (клетку) как в тетради.
     Сетка всегда начинается от краев margin и полностью заполняет рабочую область.
@@ -292,7 +291,6 @@ def generate_grid_background(c, page_size, cell_size=5*mm):
     from reportlab.lib.pagesizes import A4, A5
     
     width, height = page_size
-    margin = 15 * mm
     
     # Вычисляем рабочую область (от margin до margin)
     work_width = width - 2 * margin
@@ -402,11 +400,12 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
     
     # Настройки страницы
     width, height = page_size
-    margin = 15 * mm
+    margin_default = 15 * mm
     cell_size = 5 * mm  # Базовый размер клетки сетки
+    grid_margin = 0 if grid_enabled else margin_default
     
     # Вычисляем реальную высоту клетки (для всех режимов для единообразия)
-    actual_cell_height = get_actual_cell_height(page_size, cell_size)
+    actual_cell_height = get_actual_cell_height(page_size, cell_size, margin=grid_margin if grid_enabled else margin_default)
     
     # Единые параметры текста для всех режимов (A4, A5, с клеткой и без)
     # Размер шрифта увеличен в 2 раза
@@ -421,34 +420,34 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
     
     # Рисуем сетку если нужно (ДО текста, чтобы она была фоном)
     if grid_enabled:
-        generate_grid_background(c, page_size, cell_size)
+        generate_grid_background(c, page_size, cell_size, margin=grid_margin)
         
         # Привязка к низу клетки: начинаем с первой строки текста
         # В ReportLab координаты идут снизу вверх, поэтому вычисляем от низа страницы
         # Отступ сверху = 2 клетки, затем первая клетка для текста
-        grid_start_y = margin  # это отступ от верха
+        grid_start_y = grid_margin  # это отступ от верха
         first_text_cell_index = 2  # пропускаем 2 клетки сверху
         # Вычисляем позицию Y от низа страницы (в ReportLab координаты снизу вверх)
         # Расстояние от верха = margin + (first_text_cell_index + 1) * actual_cell_height
         distance_from_top = grid_start_y + (first_text_cell_index + 1) * actual_cell_height
         y = height - distance_from_top  # Y координата от низа страницы
         
-        x = margin + 2 * cell_size                         # 2 клетки слева
+        x = 2 * cell_size  # 2 клетки слева от края листа
     else:
         # Без сетки: начинаем с отступа сверху, но используем те же параметры текста
-        y = height - margin
-        x = margin + 2 * cell_size
+        y = height - margin_default
+        x = 2 * cell_size
     
     # Функция для получения начальной Y позиции при создании новой страницы
     def get_initial_y():
         if grid_enabled:
-            grid_start_y = margin
+            grid_start_y = grid_margin
             first_text_cell_index = 2
             # Вычисляем позицию Y от низа страницы (в ReportLab координаты снизу вверх)
             distance_from_top = grid_start_y + (first_text_cell_index + 1) * actual_cell_height
             return height - distance_from_top
         else:
-            return height - margin
+            return height - margin_default
     
     # Обрабатываем текст: разбиваем на абзацы
     # Поддерживаем обычные переносы строк как абзацы
@@ -521,7 +520,7 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
             current_line = []
             current_width = 0
             # Доступная ширина текста с учетом левого отступа и правого поля
-            max_width = width - x - margin
+            max_width = width - x - (grid_margin if grid_enabled else margin_default)
             effective_max_width = max_width
             
             for word in words:
@@ -535,10 +534,10 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                         words_line = ' '.join(current_line)
                         
                         # Проверяем, достаточно ли места для строки ПЕРЕД рисованием
-                        if y < margin + line_height:
+                        if y < margin_default + line_height:
                             c.showPage()
                             if grid_enabled:
-                                generate_grid_background(c, page_size, cell_size)
+                                generate_grid_background(c, page_size, cell_size, margin=grid_margin)
                             y = get_initial_y()
                         
                         # Рисуем с форматированием
@@ -560,10 +559,10 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                             temp_word += char
                         else:
                             if temp_word:
-                                if y < margin + line_height:
+                                if y < margin_default + line_height:
                                     c.showPage()
                                     if grid_enabled:
-                                        generate_grid_background(c, page_size, cell_size)
+                                        generate_grid_background(c, page_size, cell_size, margin=grid_margin)
                                     y = get_initial_y()
                                 
                                 current_x = x
@@ -573,10 +572,10 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                                 effective_max_width = max_width
                             temp_word = char
                     if temp_word:
-                        if y < margin + line_height:
+                        if y < margin_default + line_height:
                             c.showPage()
                             if grid_enabled:
-                                generate_grid_background(c, page_size, cell_size)
+                                generate_grid_background(c, page_size, cell_size, margin=grid_margin)
                             y = get_initial_y()
                         
                         current_x = x
@@ -594,10 +593,10 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                         current_x = x
                         words_line = ' '.join(current_line)
                         
-                        if y < margin + line_height:
+                        if y < margin_default + line_height:
                             c.showPage()
                             if grid_enabled:
-                                generate_grid_background(c, page_size, cell_size)
+                                generate_grid_background(c, page_size, cell_size, margin=grid_margin)
                             y = get_initial_y()
                         
                         safe_draw_string(c, current_x, y, words_line, font_size, selector.select)
@@ -614,10 +613,10 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                 current_x = x
                 words_line = ' '.join(current_line)
                 
-                if y < margin + line_height:
+                if y < margin_default + line_height:
                     c.showPage()
                     if grid_enabled:
-                        generate_grid_background(c, page_size, cell_size)
+                        generate_grid_background(c, page_size, cell_size, margin=grid_margin)
                     y = get_initial_y()
                 
                 safe_draw_string(c, current_x, y, words_line, font_size, selector.select)
