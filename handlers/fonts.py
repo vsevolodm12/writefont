@@ -5,14 +5,60 @@
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
-from utils.db_utils import update_user_font, save_font_file, add_variant_font, get_user_info
+from utils.db_utils import (
+    save_font_file,
+    get_user_info,
+    analyze_and_register_font,
+    get_font_requirement_progress,
+    has_minimum_font_set,
+    get_user_fonts_by_type,
+)
 import os
 import logging
 
 logger = logging.getLogger(__name__)
 router = Router()
 
+FONT_TYPE_LABELS = {
+    "cyrillic_full": "Кириллический (строчные и заглавные)",
+    "digits": "Цифры и спецсимволы",
+    "latin": "Латиница",
+}
 
+UPLOAD_SEQUENCE = [
+    "cyrillic_full",
+    "digits",
+    "latin",
+]
+
+
+def _format_progress(progress: dict) -> str:
+    lines = []
+    for font_type in UPLOAD_SEQUENCE:
+        info = progress.get(font_type, {"current": 0, "required": 0})
+        label = FONT_TYPE_LABELS.get(font_type, font_type)
+        status_icon = "✅" if info["current"] >= info["required"] else "⬜️"
+        lines.append(f"{status_icon} {label}: {info['current']}/{info['required']}")
+    return "\n".join(lines)
+
+
+def _find_next_requirement(progress: dict) -> str | None:
+    for font_type in UPLOAD_SEQUENCE:
+        info = progress.get(font_type)
+        if info and info["current"] < info["required"]:
+            return font_type
+    return None
+
+
+def _build_next_step_message(progress: dict) -> str:
+    next_req = _find_next_requirement(progress)
+    if not next_req:
+        return "🎉 Все обязательные шрифты загружены! Можно переходить к генерации текста."
+    label = FONT_TYPE_LABELS.get(next_req, next_req)
+    return (
+        f"🔄 Следующий шаг: загрузите шрифт категории «{label}».\n"
+        f"Подсказка: используйте кнопку «📥 Загрузить шрифты» и следуйте инструкции."
+    )
 
 
 async def handle_font_file(message: Message, file_ext: str):
@@ -42,55 +88,43 @@ async def handle_font_file(message: Message, file_ext: str):
         
         # Сохраняем файл
         font_path = save_font_file(file_data, file_name)
-        
-        # Получаем информацию о пользователе для проверки существующих шрифтов
-        from utils.db_utils import get_user_info
-        user = get_user_info(user_id)
-        
-        # Если у пользователя уже есть основной шрифт, новый файл добавляется как вариативный
-        if user and user.get('font_path'):
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
-            ])
-            
-            if add_variant_font(user_id, font_path):
-                await message.answer(
-                    f"✅ Шрифт добавлен\n\n"
-                    f"📝 {file_name}\n\n"
-                    f"💡 Для лучшего эффекта отправьте еще 1-2 похожих шрифта.",
-                    reply_markup=keyboard
-                )
-            else:
-                await message.answer("❌ Ошибка при добавлении шрифта.", reply_markup=keyboard)
-            return
-        
-        # Обновляем путь к шрифту в БД (первый/основной шрифт)
-        if update_user_font(user_id, font_path):
-            from handlers.menu import get_main_menu_keyboard
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="📄 Выбрать формат", callback_data="menu_set_format")],
-                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
-            ])
-            
-            await message.answer(
-                f"✅ Шрифт загружен\n\n"
-                f"📝 {file_name}\n\n"
-                f"💡 Для реалистичного почерка отправьте еще 1-2 похожих шрифта.",
-                reply_markup=keyboard
+        result = analyze_and_register_font(user_id, font_path)
+        progress = result["progress"]
+        font_type_added = result.get("font_type")
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        keyboard_buttons = [
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")],
+        ]
+        if has_minimum_font_set(user_id):
+            keyboard_buttons.insert(
+                0,
+                [InlineKeyboardButton(text="📄 Сгенерировать PDF", callback_data="menu_create_pdf")],
             )
-        else:
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
-            ])
-            await message.answer(
-                "❌ Ошибка при сохранении шрифта",
-                reply_markup=keyboard
-            )
-            
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+        progress_text = _format_progress(progress)
+        next_step = _build_next_step_message(progress)
+
+        fonts_summary = get_user_fonts_by_type(user_id)
+        base_fonts = fonts_summary.get("base", [])
+        base_line = f"👑 Базовый шрифт: {os.path.basename(base_fonts[0])}" if base_fonts else "⚠️ Базовый кириллический шрифт ещё не выбран."
+
+        font_type_text = ""
+        if font_type_added and font_type_added in FONT_TYPE_LABELS:
+            font_type_text = f"📂 Категория: {FONT_TYPE_LABELS[font_type_added]}\n\n"
+
+        await message.answer(
+            (
+                f"✅ Шрифт загружен: {file_name}\n\n"
+                f"{font_type_text}"
+                f"{base_line}\n\n"
+                f"📊 Прогресс:\n{progress_text}\n\n"
+                f"{next_step}"
+            ),
+            reply_markup=keyboard,
+        )
+    
     except Exception as e:
         logger.error(f"Ошибка при загрузке шрифта для пользователя {user_id}: {e}", exc_info=True)
         await message.answer(f"❌ Ошибка при загрузке шрифта: {str(e)}")

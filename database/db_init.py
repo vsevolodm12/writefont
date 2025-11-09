@@ -89,6 +89,36 @@ def create_tables():
                 status VARCHAR(20) DEFAULT 'pending'
             );
         """)
+
+        # Таблица fonts для хранения загруженных шрифтов
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS fonts (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                path TEXT NOT NULL,
+                font_type VARCHAR(32) NOT NULL,
+                supports_cyrillic_lower BOOLEAN DEFAULT FALSE,
+                supports_cyrillic_upper BOOLEAN DEFAULT FALSE,
+                supports_latin_lower BOOLEAN DEFAULT FALSE,
+                supports_latin_upper BOOLEAN DEFAULT FALSE,
+                supports_digits BOOLEAN DEFAULT FALSE,
+                supports_symbols BOOLEAN DEFAULT FALSE,
+                coverage_score INTEGER DEFAULT 0,
+                is_base BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (user_id, path)
+            );
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_fonts_user_type
+            ON fonts (user_id, font_type);
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_fonts_user_is_base
+            ON fonts (user_id, is_base);
+        """)
         
         conn.commit()
         print("Таблицы успешно созданы.")

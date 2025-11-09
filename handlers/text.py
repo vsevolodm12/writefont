@@ -4,7 +4,14 @@
 
 from aiogram import Router, F
 from aiogram.types import Message, FSInputFile
-from utils.db_utils import get_user_info, update_job_pdf_path, update_job_status_failed
+from utils.db_utils import (
+    get_user_info,
+    update_job_pdf_path,
+    update_job_status_failed,
+    get_fonts_for_generation,
+    has_minimum_font_set,
+    get_font_requirement_progress,
+)
 from database.connection import get_db_connection, return_db_connection
 from pdf_generator import generate_pdf_for_job
 from utils.executors import pdf_executor
@@ -14,10 +21,118 @@ import time
 import os
 import asyncio
 import logging
+import unicodedata
 
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+FONT_TYPE_LABELS = {
+    "cyrillic_full": "Кириллица (строчные и заглавные)",
+    "digits": "Цифры и спецсимволы",
+    "latin": "Латиница",
+}
+
+UPLOAD_SEQUENCE = ("cyrillic_full", "digits", "latin")
+
+CATEGORY_TO_REQUIREMENT = {
+    "cyrillic_lower": "cyrillic_full",
+    "cyrillic_upper": "cyrillic_full",
+    "latin_lower": "latin",
+    "latin_upper": "latin",
+    "digits": "digits",
+    "symbols": "digits",
+}
+
+
+def _is_cyrillic(char: str) -> bool:
+    try:
+        return "CYRILLIC" in unicodedata.name(char)
+    except ValueError:
+        return False
+
+
+def _is_latin(char: str) -> bool:
+    try:
+        return "LATIN" in unicodedata.name(char)
+    except ValueError:
+        return False
+
+
+def _format_progress(progress: dict) -> str:
+    lines = []
+    for font_type in UPLOAD_SEQUENCE:
+        info = progress.get(font_type, {"current": 0, "required": 0})
+        label = FONT_TYPE_LABELS.get(font_type, font_type)
+        status_icon = "✅" if info["current"] >= info["required"] else "⬜️"
+        lines.append(f"{status_icon} {label}: {info['current']}/{info['required']}")
+    return "\n".join(lines)
+
+
+def _aggregate_font_support(font_sets: dict) -> dict:
+    records = []
+    base = font_sets.get("base")
+    if base:
+        records.append(base)
+    for key in ("cyrillic", "latin", "digits", "other"):
+        records.extend(font_sets.get(key, []))
+
+    support = {
+        "cyrillic_lower": any(rec.get("supports_cyrillic_lower") for rec in records),
+        "cyrillic_upper": any(rec.get("supports_cyrillic_upper") for rec in records),
+        "latin_lower": any(rec.get("supports_latin_lower") for rec in records),
+        "latin_upper": any(rec.get("supports_latin_upper") for rec in records),
+        "digits": any(rec.get("supports_digits") for rec in records),
+        "symbols": any((rec.get("supports_symbols") or rec.get("supports_digits")) for rec in records),
+    }
+    return support
+
+
+def _detect_missing_categories(text: str, support: dict) -> set[str]:
+    missing: set[str] = set()
+    for char in text:
+        if not char or char.isspace():
+            continue
+        if char.isdigit():
+            if not support.get("digits"):
+                missing.add("digits")
+            continue
+        category = unicodedata.category(char)
+        if _is_cyrillic(char):
+            if char.isupper():
+                if not support.get("cyrillic_upper"):
+                    missing.add("cyrillic_upper")
+            else:
+                if not support.get("cyrillic_lower"):
+                    missing.add("cyrillic_lower")
+        elif _is_latin(char):
+            if char.isupper():
+                if not support.get("latin_upper"):
+                    missing.add("latin_upper")
+            else:
+                if not support.get("latin_lower"):
+                    missing.add("latin_lower")
+        elif category and category[0] in {"P", "S"}:
+            if not support.get("symbols"):
+                missing.add("symbols")
+        # Прочие символы (например, эмодзи) игнорируем — они будут заменены базовым шрифтом
+    return missing
+
+
+def _build_missing_message(missing: set[str], progress: dict) -> str:
+    if not missing:
+        return ""
+    required_types = {CATEGORY_TO_REQUIREMENT.get(cat) for cat in missing if CATEGORY_TO_REQUIREMENT.get(cat)}
+    required_types.discard(None)
+
+    lines = ["⚠️ Не хватает шрифтов для некоторых символов:"]
+    for font_type in sorted(required_types):
+        label = FONT_TYPE_LABELS.get(font_type, font_type)
+        info = progress.get(font_type, {"current": 0, "required": 0})
+        lines.append(f"• {label}: {info['current']}/{info['required']} загружено")
+
+    lines.append("\nЗагрузите недостающие шрифты через кнопку «📥 Загрузить шрифты».")
+    return "\n".join(lines)
 
 
 @router.message(F.text & ~F.text.startswith('/'))
@@ -52,20 +167,17 @@ async def handle_text_message(message: Message):
         from utils.db_utils import get_or_create_user
         user = get_or_create_user(user_id)
     
-    # Проверка шрифта
-    if not user['font_path']:
+    ready_font_set = has_minimum_font_set(user_id)
+    if not ready_font_set:
+        progress = get_font_requirement_progress(user_id)
+        progress_text = _format_progress(progress)
         from handlers.menu import get_main_menu_keyboard
+        grid_enabled = user.get('grid_enabled', False)
         await message.answer(
-            "❌ Шрифт не загружен.\n\nИспользуйте меню для загрузки шрифта.",
-            reply_markup=get_main_menu_keyboard()
-        )
-        return
-    
-    if not os.path.exists(user['font_path']):
-        from handlers.menu import get_main_menu_keyboard
-        await message.answer(
-            "❌ Файл шрифта не найден.\n\nЗагрузите шрифт заново через меню.",
-            reply_markup=get_main_menu_keyboard()
+            "⚠️ Перед генерацией нужно загрузить необходимые шрифты.\n\n"
+            f"{progress_text}\n\n"
+            "Используйте кнопку «📥 Загрузить шрифты» и следуйте инструкции.",
+            reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate=False)
         )
         return
     
@@ -83,6 +195,30 @@ async def handle_text_message(message: Message):
         await message.answer(
             "❌ Некорректный формат страницы.\n\nВыберите формат через меню.",
             reply_markup=get_main_menu_keyboard()
+        )
+        return
+
+    font_sets = get_fonts_for_generation(user_id)
+    base_meta = font_sets.get("base")
+    base_path = base_meta.get("path") if base_meta else None
+    if not base_path or not os.path.exists(base_path):
+        from handlers.menu import get_main_menu_keyboard
+        await message.answer(
+            "❌ Базовый кириллический шрифт не найден.\n\nЗагрузите или переустановите шрифты.",
+            reply_markup=get_main_menu_keyboard(user.get('grid_enabled', False), ready_to_generate=False)
+        )
+        return
+
+    support = _aggregate_font_support(font_sets)
+    missing_categories = _detect_missing_categories(text_content, support)
+    if missing_categories:
+        progress = get_font_requirement_progress(user_id)
+        warning_text = _build_missing_message(missing_categories, progress)
+        from handlers.menu import get_main_menu_keyboard
+        grid_enabled = user.get('grid_enabled', False)
+        await message.answer(
+            warning_text,
+            reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate=False)
         )
         return
     
@@ -109,9 +245,6 @@ async def handle_text_message(message: Message):
         # Получаем настройку сетки
         grid_enabled = user.get('grid_enabled', False)
         
-        # Получаем список вариативных шрифтов
-        variant_fonts = user.get('variant_fonts', [])
-        
         # Генерируем PDF асинхронно в отдельном потоке
         start_time = time.time()
         loop = asyncio.get_event_loop()
@@ -120,10 +253,9 @@ async def handle_text_message(message: Message):
             generate_pdf_for_job,
             job_id, 
             text_content, 
-            user['font_path'], 
+            font_sets,
             user['page_format'],
             grid_enabled,
-            variant_fonts
         )
         execution_time_ms = int((time.time() - start_time) * 1000)
         

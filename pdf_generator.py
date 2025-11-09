@@ -13,6 +13,121 @@ from config import FONTS_DIR, GENERATED_DIR
 import os
 import re
 import random
+import unicodedata
+from typing import Optional, Dict, List
+def _is_cyrillic(char: str) -> bool:
+    try:
+        return "CYRILLIC" in unicodedata.name(char)
+    except ValueError:
+        return False
+
+
+def _is_latin(char: str) -> bool:
+    try:
+        return "LATIN" in unicodedata.name(char)
+    except ValueError:
+        return False
+
+
+class FontSelector:
+    def __init__(self, font_sets, font_name_map):
+        self.font_name_map = font_name_map
+        self.base_meta = font_sets.get("base")
+        self.base_font_name = None
+        if self.base_meta and self.base_meta.get("path") in font_name_map:
+            self.base_font_name = font_name_map[self.base_meta["path"]]
+        self.default_font_name = self.base_font_name or (next(iter(font_name_map.values())) if font_name_map else None)
+
+        self.cyrillic_fonts = self._prepare_fonts(font_sets.get("cyrillic", []))
+        self.latin_fonts = self._prepare_fonts(font_sets.get("latin", []), include_base=False)
+        self.digit_fonts = self._prepare_fonts(font_sets.get("digits", []), include_base=False)
+        self.other_fonts = self._prepare_fonts(font_sets.get("other", []), include_base=False)
+
+    def _prepare_fonts(self, records, include_base: bool = True):
+        unique = []
+        seen = set()
+        candidates = []
+        if include_base and self.base_meta:
+            candidates.append(self.base_meta)
+        candidates.extend(records or [])
+        for record in candidates:
+            if not record:
+                continue
+            path = record.get("path")
+            if not path or path not in self.font_name_map:
+                continue
+            if path in seen:
+                continue
+            seen.add(path)
+            unique.append(record)
+        return unique
+
+    def _choose_from_pool(self, char, used_fonts_per_char, pool, requirement, allow_base_fallback=True):
+        candidates = [rec for rec in pool if rec and requirement(rec)]
+        if allow_base_fallback and self.base_meta and requirement(self.base_meta):
+            if self.base_meta not in candidates:
+                candidates.append(self.base_meta)
+
+        candidates = [rec for rec in candidates if rec and rec.get("path") in self.font_name_map]
+
+        if not candidates:
+            if allow_base_fallback and self.base_font_name:
+                return self.base_font_name
+            return self.default_font_name
+
+        used = set(used_fonts_per_char.get(char, []))
+        available = [rec for rec in candidates if self.font_name_map[rec["path"]] not in used]
+        if not available:
+            available = candidates
+        chosen = random.choice(available)
+        return self.font_name_map[chosen["path"]]
+
+    def select(self, char: Optional[str], used_fonts_per_char: dict) -> str:
+        if not char or char.isspace():
+            return self.base_font_name or self.default_font_name
+
+        if char.isdigit():
+            return self._choose_from_pool(
+                char,
+                used_fonts_per_char,
+                self.digit_fonts,
+                lambda rec: rec.get("supports_digits"),
+            )
+
+        if _is_cyrillic(char):
+            if char.isupper():
+                requirement = lambda rec: rec.get("supports_cyrillic_upper")
+            else:
+                requirement = lambda rec: rec.get("supports_cyrillic_lower")
+            return self._choose_from_pool(
+                char,
+                used_fonts_per_char,
+                self.cyrillic_fonts,
+                requirement,
+            )
+
+        if _is_latin(char):
+            if char.isupper():
+                requirement = lambda rec: rec.get("supports_latin_upper")
+            else:
+                requirement = lambda rec: rec.get("supports_latin_lower")
+            return self._choose_from_pool(
+                char,
+                used_fonts_per_char,
+                self.latin_fonts,
+                requirement,
+            )
+
+        # Пунктуация и прочие символы
+        if unicodedata.category(char).startswith(("P", "S")):
+            return self._choose_from_pool(
+                char,
+                used_fonts_per_char,
+                self.digit_fonts or self.cyrillic_fonts or self.other_fonts,
+                lambda rec: rec.get("supports_symbols") or rec.get("supports_digits"),
+            )
+
+        return self.base_font_name or self.default_font_name
 
 
 def register_font(font_path: str):
@@ -64,80 +179,55 @@ def draw_formatted_text(c, x, y, text, font_name, font_size, bold=False, italic=
         c.line(x, line_y, x + text_width, line_y)
 
 
-def safe_draw_string(c, x, y, text, font_name, font_size, font_path, font_names=None):
+def safe_draw_string(c, x, y, text, font_size, select_font):
     """
-    Безопасно рисует строку, используя TextObject для лучшей поддержки Unicode
-    Если font_names указан - случайно выбирает шрифт для каждой буквы
-    В одном слове одинаковые буквы не будут использовать один и тот же шрифт
+    Безопасно рисует строку, используя TextObject для лучшей поддержки Unicode.
+    select_font — функция, возвращающая имя шрифта для конкретного символа.
     """
-    # Убираем символы разметки Markdown для рисования
     clean_text = text
-    clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)  # Убираем **
-    clean_text = re.sub(r'__(.*?)__', r'\1', clean_text)  # Убираем __
-    clean_text = re.sub(r'~~(.*?)~~', r'\1', clean_text)  # Убираем ~~
-    clean_text = re.sub(r'\*(.*?)\*', r'\1', clean_text)  # Убираем *
-    clean_text = re.sub(r'_(.*?)_', r'\1', clean_text)  # Убираем _
-    
-    # Если есть несколько шрифтов - рисуем каждую букву разным шрифтом
-    if font_names and len(font_names) > 1:
+    clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
+    clean_text = re.sub(r'__(.*?)__', r'\1', clean_text)
+    clean_text = re.sub(r'~~(.*?)~~', r'\1', clean_text)
+    clean_text = re.sub(r'\*(.*?)\*', r'\1', clean_text)
+    clean_text = re.sub(r'_(.*?)_', r'\1', clean_text)
+
+    if select_font:
         current_x = x
         t = c.beginText(current_x, y)
-        
-        # Разбиваем текст на слова (сохраняем пробелы и знаки препинания отдельно)
-        # Используем регулярное выражение для разделения на слова и не-слова
-        words = re.split(r'(\W)', clean_text)  # \W - все не-словесные символы
-        
+
+        words = re.split(r'(\W)', clean_text)
+
         for word in words:
-            if not word or not word.strip():  # Пробелы и знаки препинания рисуем обычным способом
-                if word:  # Если это не пустая строка (например, пробел или знак препинания)
-                    # Для пробелов и знаков используем любой случайный шрифт
-                    random_font = random.choice(list(font_names.values()))
-                    t.setFont(random_font, font_size)
-                    t.textOut(word)
+            if not word:
                 continue
-            
-            # Для каждого слова отслеживаем использованные шрифты для каждой буквы
-            # Словарь: буква -> список использованных шрифтов для этой буквы в этом слове
+
+            if not word.strip():
+                font_name = select_font(" ", {})
+                t.setFont(font_name, font_size)
+                t.textOut(word)
+                continue
+
             used_fonts_per_char = {}
-            
+
             for char in word:
-                available_fonts = list(font_names.values())
-                
-                # Если эта буква уже встречалась в слове, исключаем использованные шрифты
-                if char in used_fonts_per_char:
-                    # Получаем шрифты, которые уже использовались для этой буквы
-                    used_for_this_char = used_fonts_per_char[char]
-                    
-                    # Исключаем использованные шрифты из доступных
-                    available_fonts = [f for f in available_fonts if f not in used_for_this_char]
-                    
-                    # Если все шрифты уже использованы, разрешаем повторение
-                    # (это может случиться если буква повторяется больше раз, чем доступно шрифтов)
-                    if not available_fonts:
-                        available_fonts = list(font_names.values())
-                
-                # Выбираем случайный шрифт из доступных
-                random_font = random.choice(available_fonts)
-                
-                # Записываем, какой шрифт использован для этой буквы
+                font_name = select_font(char, used_fonts_per_char)
                 if char not in used_fonts_per_char:
                     used_fonts_per_char[char] = []
-                used_fonts_per_char[char].append(random_font)
-                
-                t.setFont(random_font, font_size)
+                used_fonts_per_char[char].append(font_name)
+                t.setFont(font_name, font_size)
                 t.textOut(char)
-        
+
         c.drawText(t)
     else:
-        # Используем TextObject - он правильно обрабатывает Unicode и пользовательские шрифты
-        # textOut не добавляет автоматический перенос строки, что нам нужно
         t = c.beginText(x, y)
-        t.setFont(font_name, font_size)
+        default_font = select_font(None, {}) if select_font else None
+        if default_font:
+            t.setFont(default_font, font_size)
         t.textOut(clean_text)
         c.drawText(t)
 
 
-def draw_line_with_formatting(c, x, y, line_text, font_name, font_size, font_path):
+def draw_line_with_formatting(c, x, y, line_text, font_size, selector):
     """
     Рисует строку текста с поддержкой форматирования
     """
@@ -152,10 +242,11 @@ def draw_line_with_formatting(c, x, y, line_text, font_name, font_size, font_pat
     # Используем TextObject для рисования
     # Важно: используем textOut, а не textLine, чтобы избежать автоматического переноса строки
     # (textLine автоматически вычитает leading, что создает лишний интервал)
-    t = c.beginText(x, y)
-    t.setFont(font_name, font_size)
-    t.textOut(clean_text)
-    c.drawText(t)
+    base_font_name = selector.base_font_name or selector.default_font_name
+    if not base_font_name:
+        raise ValueError("Невозможно определить базовый шрифт для форматирования текста")
+
+    safe_draw_string(c, x, y, clean_text, font_size, selector.select)
     
     # Проверяем есть ли подчеркнутые части в строке для рисования линии
     underline_pattern = r'~~(.*?)~~'
@@ -168,9 +259,9 @@ def draw_line_with_formatting(c, x, y, line_text, font_name, font_size, font_pat
         underline_clean = re.sub(r'\*\*|__|\*|_|~~', '', underline_text)
         
         # Вычисляем позицию подчеркнутого текста
-        c.setFont(font_name, font_size)
-        start_width = c.stringWidth(start_clean, font_name, font_size)
-        underline_width = c.stringWidth(underline_clean, font_name, font_size)
+        c.setFont(base_font_name, font_size)
+        start_width = c.stringWidth(start_clean, base_font_name, font_size)
+        underline_width = c.stringWidth(underline_clean, base_font_name, font_size)
         
         # Рисуем линию под текстом
         line_y = y - 1.5
@@ -263,17 +354,16 @@ def generate_grid_background(c, page_size, cell_size=5*mm):
         c.line(grid_start_x, y, grid_end_x, y)
 
 
-def generate_pdf(text_content: str, font_path: str, page_format: str, output_path: str, grid_enabled: bool = False, variant_fonts: list = None):
+def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str, output_path: str, grid_enabled: bool = False):
     """
-    Генерирует PDF с текстом используя пользовательский шрифт и вариативные шрифты
-    
+    Генерирует PDF с текстом используя наборы шрифтов разных типов.
+
     Args:
-        text_content: Текст для размещения в PDF
-        font_path: Путь к основному TTF-шрифту
-        page_format: Формат страницы ('A4' или 'A5')
-        output_path: Путь для сохранения PDF файла
-        grid_enabled: Включить фоновую сетку
-        variant_fonts: Список путей к вариативным шрифтам для случайного выбора
+        text_content: Текст для размещения.
+        font_sets: Словарь с наборами шрифтов и их метаданными.
+        page_format: Формат страницы ('A4' или 'A5').
+        output_path: Путь для сохранения PDF файла.
+        grid_enabled: Включить фоновую сетку.
     """
     # Проверка текста
     if not text_content or not text_content.strip():
@@ -283,19 +373,23 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
     if page_format not in ['A4', 'A5']:
         raise ValueError(f"Неподдерживаемый формат страницы: {page_format}. Используйте 'A4' или 'A5'")
     
-    # Подготавливаем список всех шрифтов (основной + варианты)
-    all_fonts = [font_path]
-    if variant_fonts:
-        all_fonts.extend(variant_fonts)
-    
-    # Регистрируем все шрифты и получаем их имена
+    base_meta = font_sets.get("base")
+    if not base_meta or not base_meta.get("path"):
+        raise ValueError("Не найден базовый шрифт для генерации PDF")
+
     font_names = {}
-    for fp in all_fonts:
-        font_name = register_font(fp)
-        font_names[fp] = font_name
-    
-    # Основной шрифт используется по умолчанию
-    main_font_name = font_names[font_path]
+    for record in font_sets.get("all", []):
+        path = record.get("path")
+        if path and path not in font_names:
+            font_names[path] = register_font(path)
+    base_path = base_meta.get("path")
+    if base_path and base_path not in font_names:
+        font_names[base_path] = register_font(base_path)
+
+    selector = FontSelector(font_sets, font_names)
+    base_font_name = selector.base_font_name or selector.default_font_name
+    if not base_font_name:
+        raise ValueError("Не удалось подготовить шрифты для генерации PDF")
     
     # Определяем размеры страницы
     if page_format == 'A5':
@@ -310,7 +404,6 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
     width, height = page_size
     margin = 15 * mm
     cell_size = 5 * mm  # Базовый размер клетки сетки
-    indent_first_line = 0  # Красная строка отключена, общий левый отступ = 2 клетки
     
     # Вычисляем реальную высоту клетки (для всех режимов для единообразия)
     actual_cell_height = get_actual_cell_height(page_size, cell_size)
@@ -432,8 +525,8 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
             effective_max_width = max_width
             
             for word in words:
-                word_width = c.stringWidth(word + ' ', font_name, font_size)
-                single_word_width = c.stringWidth(word, font_name, font_size)
+                word_width = c.stringWidth(word + ' ', base_font_name, font_size)
+                single_word_width = c.stringWidth(word, base_font_name, font_size)
                 
                 # Если одно слово шире страницы, разбиваем на части
                 if single_word_width > effective_max_width:
@@ -449,7 +542,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                             y = get_initial_y()
                         
                         # Рисуем с форматированием
-                        draw_line_with_formatting(c, current_x, y, words_line, font_name, font_size, font_path)
+                        draw_line_with_formatting(c, current_x, y, words_line, font_size, selector)
                         # Переходим к следующей строке: вычитаем line_height (двигаемся вниз)
                         y -= line_height
                         
@@ -462,7 +555,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                     chars = list(word)
                     temp_word = ''
                     for char in chars:
-                        char_width = c.stringWidth(temp_word + char, font_name, font_size)
+                        char_width = c.stringWidth(temp_word + char, base_font_name, font_size)
                         if char_width <= effective_max_width:
                             temp_word += char
                         else:
@@ -474,7 +567,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                                     y = get_initial_y()
                                 
                                 current_x = x
-                                safe_draw_string(c, current_x, y, temp_word, font_name, font_size, font_path, font_names)
+                                safe_draw_string(c, current_x, y, temp_word, font_size, selector.select)
                                 y -= line_height
                                 first_line_in_paragraph = False
                                 effective_max_width = max_width
@@ -487,7 +580,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                             y = get_initial_y()
                         
                         current_x = x
-                        safe_draw_string(c, current_x, y, temp_word, font_name, font_size, font_path, font_names)
+                        safe_draw_string(c, current_x, y, temp_word, font_size, selector.select)
                         y -= line_height
                         first_line_in_paragraph = False
                         effective_max_width = max_width
@@ -507,7 +600,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                                 generate_grid_background(c, page_size, cell_size)
                             y = get_initial_y()
                         
-                        safe_draw_string(c, current_x, y, words_line, font_name, font_size, font_path, font_names)
+                        safe_draw_string(c, current_x, y, words_line, font_size, selector.select)
                         y -= line_height
                         
                         first_line_in_paragraph = False
@@ -527,7 +620,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
                         generate_grid_background(c, page_size, cell_size)
                     y = get_initial_y()
                 
-                safe_draw_string(c, current_x, y, words_line, font_name, font_size, font_path, font_names)
+                safe_draw_string(c, current_x, y, words_line, font_size, selector.select)
                 y -= line_height
                 first_line_in_paragraph = False
         
@@ -539,7 +632,7 @@ def generate_pdf(text_content: str, font_path: str, page_format: str, output_pat
     c.save()
 
 
-def generate_pdf_for_job(job_id: int, text_content: str, font_path: str, page_format: str, grid_enabled: bool = False, variant_fonts: list = None) -> str:
+def generate_pdf_for_job(job_id: int, text_content: str, font_sets: Dict[str, list], page_format: str, grid_enabled: bool = False) -> str:
     """
     Генерирует PDF для задачи из jobs таблицы
     
@@ -553,8 +646,9 @@ def generate_pdf_for_job(job_id: int, text_content: str, font_path: str, page_fo
     if not text_content:
         raise ValueError("Текст не может быть пустым")
     
-    if not font_path:
-        raise ValueError("Путь к шрифту не указан")
+    base_meta = font_sets.get("base")
+    if not base_meta or not base_meta.get("path"):
+        raise ValueError("Базовый шрифт не указан")
     
     if not page_format:
         raise ValueError("Формат страницы не указан")
@@ -562,6 +656,6 @@ def generate_pdf_for_job(job_id: int, text_content: str, font_path: str, page_fo
     os.makedirs(GENERATED_DIR, exist_ok=True)
     output_path = os.path.join(GENERATED_DIR, f"job_{job_id}.pdf")
     
-    generate_pdf(text_content, font_path, page_format, output_path, grid_enabled, variant_fonts)
+    generate_pdf(text_content, font_sets, page_format, output_path, grid_enabled)
     
     return output_path
