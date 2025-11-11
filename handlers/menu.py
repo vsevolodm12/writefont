@@ -14,6 +14,7 @@ from utils.db_utils import (
     get_user_fonts_by_type,
 )
 from config import PAGE_FORMATS
+from utils.telegram_retry import call_with_retries
 
 router = Router()
 
@@ -171,7 +172,11 @@ async def cmd_start(message: Message):
         welcome_text += "Выберите действие:"
         
         # Отправляем сообщение только один раз
-        await message.answer(welcome_text, reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate))
+        await call_with_retries(
+            message.answer,
+            welcome_text,
+            reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate),
+        )
         logger.info(f"✓ Successfully sent /start response to user {user_id}")
         
     except Exception as e:
@@ -220,8 +225,12 @@ async def menu_main(callback: CallbackQuery):
         welcome_text += "⚠️ Загрузите шрифты по шагам, прежде чем создавать PDF.\n\n"
     welcome_text += "Выберите действие:"
     
-    await callback.message.edit_text(welcome_text, reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate))
-    await callback.answer()
+    await call_with_retries(
+        callback.message.edit_text,
+        welcome_text,
+        reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate),
+    )
+    await call_with_retries(callback.answer)
 
 
 @router.callback_query(F.data == "menu_upload_font")
@@ -261,8 +270,8 @@ async def menu_upload_font(callback: CallbackQuery):
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
     ])
     
-    await callback.message.edit_text(text, reply_markup=keyboard)
-    await callback.answer()
+    await call_with_retries(callback.message.edit_text, text, reply_markup=keyboard)
+    await call_with_retries(callback.answer)
 
 
 @router.callback_query(F.data == "menu_set_format")
@@ -278,8 +287,8 @@ async def menu_set_format(callback: CallbackQuery):
     
     text += "Выберите формат страницы:"
     
-    await callback.message.edit_text(text, reply_markup=get_format_keyboard())
-    await callback.answer()
+    await call_with_retries(callback.message.edit_text, text, reply_markup=get_format_keyboard())
+    await call_with_retries(callback.answer)
 
 
 @router.callback_query(F.data == "menu_create_pdf")
@@ -319,8 +328,8 @@ async def menu_create_pdf(callback: CallbackQuery):
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
     ])
     
-    await callback.message.edit_text(text, reply_markup=keyboard)
-    await callback.answer()
+    await call_with_retries(callback.message.edit_text, text, reply_markup=keyboard)
+    await call_with_retries(callback.answer)
     
 
 
@@ -330,9 +339,9 @@ async def reset_fonts_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
     
     if reset_user_fonts(user_id):
-        await callback.answer("✅ Шрифты сброшены")
+        await call_with_retries(callback.answer, "✅ Шрифты сброшены")
         await menu_upload_font(callback)
     else:
-        await callback.answer("❌ Ошибка при сбросе шрифтов", show_alert=True)
+        await call_with_retries(callback.answer, "❌ Ошибка при сбросе шрифтов", show_alert=True)
 
 

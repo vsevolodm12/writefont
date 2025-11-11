@@ -7,6 +7,8 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiohttp import ClientTimeout
 
 from config import BOT_TOKEN
 from config import WEBHOOK_URL, WEBHOOK_SECRET, WEBAPP_HOST, WEBAPP_PORT, WEBHOOK_PATH
@@ -101,8 +103,11 @@ async def main():
             sys.exit(1)
 
     # Создаем бота и диспетчер
+    timeout = ClientTimeout(total=120, connect=30, sock_connect=30, sock_read=120)
+    session = AiohttpSession(timeout=timeout)
     bot = Bot(
         token=BOT_TOKEN,
+        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher()

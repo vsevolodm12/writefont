@@ -17,6 +17,7 @@ from pdf_generator import generate_pdf_for_job
 from utils.executors import pdf_executor
 from utils.rate_limit import check_rate_limit
 from utils.metrics import metrics
+from utils.telegram_retry import call_with_retries
 import time
 import os
 import asyncio
@@ -144,21 +145,21 @@ async def handle_text_message(message: Message):
     # Проверка rate limit
     allowed, error_msg = check_rate_limit(user_id)
     if not allowed:
-        await message.answer(error_msg)
+        await call_with_retries(message.answer, error_msg)
         logger.warning(f"Rate limit exceeded for user {user_id}")
         return
     
     # Проверка текста
     if not text_content:
-        await message.answer("❌ Текст не может быть пустым.")
+        await call_with_retries(message.answer, "❌ Текст не может быть пустым.")
         return
     
     if len(text_content) < 3:
-        await message.answer("❌ Текст слишком короткий (минимум 3 символа).")
+        await call_with_retries(message.answer, "❌ Текст слишком короткий (минимум 3 символа).")
         return
     
     if len(text_content) > 100000:
-        await message.answer("❌ Текст слишком длинный (максимум 100000 символов).")
+        await call_with_retries(message.answer, "❌ Текст слишком длинный (максимум 100000 символов).")
         return
     
     # Получаем информацию о пользователе
@@ -173,28 +174,31 @@ async def handle_text_message(message: Message):
         progress_text = _format_progress(progress)
         from handlers.menu import get_main_menu_keyboard
         grid_enabled = user.get('grid_enabled', False)
-        await message.answer(
+        await call_with_retries(
+            message.answer,
             "⚠️ Перед генерацией нужно загрузить необходимые шрифты.\n\n"
             f"{progress_text}\n\n"
             "Используйте кнопку «📥 Загрузить шрифты» и следуйте инструкции.",
-            reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate=False)
+            reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate=False),
         )
         return
     
     # Проверка формата страницы
     if not user['page_format']:
         from handlers.menu import get_main_menu_keyboard
-        await message.answer(
+        await call_with_retries(
+            message.answer,
             "❌ Формат страницы не выбран.\n\nВыберите формат через меню.",
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=get_main_menu_keyboard(),
         )
         return
     
     if user['page_format'] not in ['A4', 'A5']:
         from handlers.menu import get_main_menu_keyboard
-        await message.answer(
+        await call_with_retries(
+            message.answer,
             "❌ Некорректный формат страницы.\n\nВыберите формат через меню.",
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=get_main_menu_keyboard(),
         )
         return
 
@@ -203,9 +207,10 @@ async def handle_text_message(message: Message):
     base_path = base_meta.get("path") if base_meta else None
     if not base_path or not os.path.exists(base_path):
         from handlers.menu import get_main_menu_keyboard
-        await message.answer(
+        await call_with_retries(
+            message.answer,
             "❌ Базовый кириллический шрифт не найден.\n\nЗагрузите или переустановите шрифты.",
-            reply_markup=get_main_menu_keyboard(user.get('grid_enabled', False), ready_to_generate=False)
+            reply_markup=get_main_menu_keyboard(user.get('grid_enabled', False), ready_to_generate=False),
         )
         return
 
@@ -216,9 +221,10 @@ async def handle_text_message(message: Message):
         warning_text = _build_missing_message(missing_categories, progress)
         from handlers.menu import get_main_menu_keyboard
         grid_enabled = user.get('grid_enabled', False)
-        await message.answer(
+        await call_with_retries(
+            message.answer,
             warning_text,
-            reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate=False)
+            reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate=False),
         )
         return
     
@@ -240,7 +246,7 @@ async def handle_text_message(message: Message):
         job_id = cursor.fetchone()[0]
         conn.commit()
         
-        await message.answer("⏳ Генерирую PDF...")
+        await call_with_retries(message.answer, "⏳ Генерирую PDF...")
         
         # Получаем настройку сетки
         grid_enabled = user.get('grid_enabled', False)
@@ -272,21 +278,24 @@ async def handle_text_message(message: Message):
             from handlers.menu import get_main_menu_keyboard
             
             pdf_file = FSInputFile(pdf_path)
-            await message.answer_document(
+            await call_with_retries(
+                message.answer_document,
                 document=pdf_file,
-                caption=f"✓ PDF сгенерирован\nВремя: {execution_time_ms}мс"
+                caption=f"✓ PDF сгенерирован\nВремя: {execution_time_ms}мс",
             )
             
             # Предлагаем создать еще один
-            await message.answer(
+            await call_with_retries(
+                message.answer,
                 "💡 Отправьте новый текст:\nя создам еще один конспект",
-                reply_markup=get_main_menu_keyboard()
+                reply_markup=get_main_menu_keyboard(),
             )
         else:
             from handlers.menu import get_main_menu_keyboard
-            await message.answer(
+            await call_with_retries(
+                message.answer,
                 "❌ Ошибка: PDF файл не найден",
-                reply_markup=get_main_menu_keyboard()
+                reply_markup=get_main_menu_keyboard(),
             )
             update_job_status_failed(job_id)
         
@@ -299,9 +308,10 @@ async def handle_text_message(message: Message):
         if job_id:
             update_job_status_failed(job_id)
         from handlers.menu import get_main_menu_keyboard
-        await message.answer(
+        await call_with_retries(
+            message.answer,
             f"❌ Ошибка при генерации PDF: {str(e)}\n\nПопробуйте снова или вернитесь в меню.",
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=get_main_menu_keyboard(),
         )
     finally:
         if cursor:

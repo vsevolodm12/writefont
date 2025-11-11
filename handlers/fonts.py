@@ -4,7 +4,6 @@
 
 from aiogram import Router, F
 from aiogram.types import Message
-from aiogram.filters import Command
 from utils.db_utils import (
     save_font_file,
     get_user_info,
@@ -13,6 +12,7 @@ from utils.db_utils import (
     has_minimum_font_set,
     get_user_fonts_by_type,
 )
+from utils.telegram_retry import call_with_retries
 import os
 import logging
 
@@ -79,7 +79,7 @@ async def handle_font_file(message: Message, file_ext: str):
         
         file_name = file.file_name
         
-        await message.answer("⏳ Загружаю шрифт...")
+        await call_with_retries(message.answer, "⏳ Загружаю шрифт...")
         
         # Скачиваем файл
         bot = message.bot
@@ -114,7 +114,8 @@ async def handle_font_file(message: Message, file_ext: str):
         if font_type_added and font_type_added in FONT_TYPE_LABELS:
             font_type_text = f"📂 Категория: {FONT_TYPE_LABELS[font_type_added]}\n\n"
 
-        await message.answer(
+        await call_with_retries(
+            message.answer,
             (
                 f"✅ Шрифт загружен: {file_name}\n\n"
                 f"{font_type_text}"
@@ -127,7 +128,7 @@ async def handle_font_file(message: Message, file_ext: str):
     
     except Exception as e:
         logger.error(f"Ошибка при загрузке шрифта для пользователя {user_id}: {e}", exc_info=True)
-        await message.answer(f"❌ Ошибка при загрузке шрифта: {str(e)}")
+        await call_with_retries(message.answer, f"❌ Ошибка при загрузке шрифта: {str(e)}")
 
 
 @router.message(F.document & (F.document.file_name.endswith('.ttf') | F.document.file_name.endswith('.TTF')))
@@ -148,7 +149,8 @@ async def handle_wrong_file_type(message: Message):
     file = message.document
     file_name = file.file_name if file and file.file_name else "неизвестно"
     
-    await message.answer(
+    await call_with_retries(
+        message.answer,
         f"❌ Неподходящий тип файла: {file_name}\n\n"
         f"Пожалуйста, отправьте файл с расширением .ttf или .otf\n\n"
         f"Используйте команду /upload_font для загрузки шрифта."
