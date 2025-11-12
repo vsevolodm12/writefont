@@ -62,6 +62,15 @@ class FontSelector:
             unique.append(record)
         return unique
 
+    def _font_supports_char(self, font_name: Optional[str], char: str) -> bool:
+        if not font_name or not char:
+            return False
+        try:
+            pdfmetrics.stringWidth(char, font_name, 12)
+            return True
+        except KeyError:
+            return False
+
     def _choose_from_pool(self, char, used_fonts_per_char, pool, requirement, allow_base_fallback=True):
         candidates = [rec for rec in pool if rec and requirement(rec)]
         if allow_base_fallback and self.base_meta and requirement(self.base_meta):
@@ -69,11 +78,20 @@ class FontSelector:
                 candidates.append(self.base_meta)
 
         candidates = [rec for rec in candidates if rec and rec.get("path") in self.font_name_map]
+        if char:
+            supported_candidates = [
+                rec for rec in candidates if self._font_supports_char(self.font_name_map[rec["path"]], char)
+            ]
+            if supported_candidates:
+                candidates = supported_candidates
 
         if not candidates:
             if allow_base_fallback and self.base_font_name:
-                return self.base_font_name
-            return self.default_font_name
+                if not char or self._font_supports_char(self.base_font_name, char):
+                    return self.base_font_name
+            if self.default_font_name and self._font_supports_char(self.default_font_name, char):
+                return self.default_font_name
+            return self.base_font_name or self.default_font_name
 
         used = set(used_fonts_per_char.get(char, []))
         available = [rec for rec in candidates if self.font_name_map[rec["path"]] not in used]
@@ -120,12 +138,17 @@ class FontSelector:
 
         # Пунктуация и прочие символы
         if unicodedata.category(char).startswith(("P", "S")):
-            return self._choose_from_pool(
-                char,
-                used_fonts_per_char,
-                self.digit_fonts or self.cyrillic_fonts or self.other_fonts,
-                lambda rec: rec.get("supports_symbols") or rec.get("supports_digits"),
-            )
+            if self.base_font_name and self._font_supports_char(self.base_font_name, char):
+                return self.base_font_name
+            if self.default_font_name and self._font_supports_char(self.default_font_name, char):
+                return self.default_font_name
+            # попробуем подобрать из прочих наборов, но без повторов
+            pool = self.cyrillic_fonts + self.latin_fonts + self.digit_fonts + self.other_fonts
+            for rec in pool:
+                font_name = self.font_name_map.get(rec.get("path"))
+                if font_name and self._font_supports_char(font_name, char):
+                    return font_name
+            return self.base_font_name or self.default_font_name
 
         return self.base_font_name or self.default_font_name
 
@@ -414,6 +437,9 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
     # Межстрочный интервал: 1 клетка для текста + 1 клетка для пробела = 2 клетки
     # Используем actual_cell_height для точного соответствия (даже без сетки)
     line_height = 2 * actual_cell_height
+
+    # Небольшое смещение вниз, чтобы текст был ближе к нижней части клетки
+    baseline_offset = actual_cell_height * 0.25
     
     # Отступ между абзацами: 2 клетки
     paragraph_spacing = 2 * actual_cell_height
@@ -430,12 +456,12 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
         # Вычисляем позицию Y от низа страницы (в ReportLab координаты снизу вверх)
         # Расстояние от верха = margin + (first_text_cell_index + 1) * actual_cell_height
         distance_from_top = grid_start_y + (first_text_cell_index + 1) * actual_cell_height
-        y = height - distance_from_top  # Y координата от низа страницы
+        y = height - distance_from_top - baseline_offset  # Y координата от низа страницы
         
         x = 2 * cell_size  # 2 клетки слева от края листа
     else:
         # Без сетки: начинаем с отступа сверху, но используем те же параметры текста
-        y = height - margin_default
+        y = height - margin_default - baseline_offset
         x = 2 * cell_size
     
     # Функция для получения начальной Y позиции при создании новой страницы
@@ -445,9 +471,9 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
             first_text_cell_index = 2
             # Вычисляем позицию Y от низа страницы (в ReportLab координаты снизу вверх)
             distance_from_top = grid_start_y + (first_text_cell_index + 1) * actual_cell_height
-            return height - distance_from_top
+            return height - distance_from_top - baseline_offset
         else:
-            return height - margin_default
+            return height - margin_default - baseline_offset
     
     # Обрабатываем текст: разбиваем на абзацы
     # Поддерживаем обычные переносы строк как абзацы

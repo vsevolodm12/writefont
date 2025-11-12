@@ -42,25 +42,6 @@ def _format_progress(progress: dict) -> str:
     return "\n".join(lines)
 
 
-def _find_next_requirement(progress: dict) -> str | None:
-    for font_type in UPLOAD_SEQUENCE:
-        info = progress.get(font_type)
-        if info and info["current"] < info["required"]:
-            return font_type
-    return None
-
-
-def _build_next_step_message(progress: dict) -> str:
-    next_req = _find_next_requirement(progress)
-    if not next_req:
-        return "🎉 Все обязательные шрифты загружены! Можно переходить к генерации текста."
-    label = FONT_TYPE_LABELS.get(next_req, next_req)
-    return (
-        f"🔄 Следующий шаг: загрузите шрифт категории «{label}».\n"
-        f"Подсказка: используйте кнопку «📥 Загрузить шрифты» и следуйте инструкции."
-    )
-
-
 async def handle_font_file(message: Message, file_ext: str):
     """Общий обработчик загрузки шрифта"""
     user_id = message.from_user.id
@@ -104,7 +85,6 @@ async def handle_font_file(message: Message, file_ext: str):
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
         progress_text = _format_progress(progress)
-        next_step = _build_next_step_message(progress)
 
         fonts_summary = get_user_fonts_by_type(user_id)
         base_fonts = fonts_summary.get("base", [])
@@ -120,8 +100,7 @@ async def handle_font_file(message: Message, file_ext: str):
                 f"✅ Шрифт загружен: {file_name}\n\n"
                 f"{font_type_text}"
                 f"{base_line}\n\n"
-                f"📊 Прогресс:\n{progress_text}\n\n"
-                f"{next_step}"
+                f"📊 Прогресс:\n{progress_text}"
             ),
             reply_markup=keyboard,
         )

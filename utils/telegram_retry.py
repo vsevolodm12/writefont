@@ -27,10 +27,13 @@ async def call_with_retries(
     :param args: позиционные аргументы для метода
     :param kwargs: именованные аргументы для метода
     """
+    last_exc: Exception | None = None
+
     for attempt in range(1, attempts + 1):
         try:
             return await method(*args, **kwargs)
         except TelegramRetryAfter as exc:
+            last_exc = exc
             wait_time = max(exc.retry_after + 0.5, base_delay)
             logger.warning(
                 "TelegramRetryAfter (%.1fs). Attempt %s/%s",
@@ -39,6 +42,7 @@ async def call_with_retries(
                 attempts,
             )
         except TelegramNetworkError as exc:
+            last_exc = exc
             wait_time = base_delay * attempt
             logger.warning(
                 "TelegramNetworkError (%s). Attempt %s/%s, retry in %.1fs",
@@ -52,7 +56,11 @@ async def call_with_retries(
 
         if attempt == attempts:
             logger.error("All retry attempts exhausted. Raising error.")
-            raise
+            if last_exc is not None:
+                raise last_exc
+            raise RuntimeError("Retry attempts exhausted without captured exception")
 
         await asyncio.sleep(wait_time)
+
+
 
