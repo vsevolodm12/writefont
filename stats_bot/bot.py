@@ -13,20 +13,31 @@ def format_number(value: int) -> str:
     return f"{value:,}".replace(",", " ")
 
 
-def format_recent(stats) -> str:
+async def format_recent(stats, bot: Bot) -> str:
     if not stats.recent_users:
         return "—"
     lines: List[str] = []
     for item in stats.recent_users:
-        if item.username and item.username != "—":
-            label = f"@{item.username}"
+        label: str
+        user_tag = item.username.strip() if item.username else ""
+        if user_tag:
+            label = f"@{user_tag}"
         else:
-            label = str(item.user_id)
+            try:
+                chat = await bot.get_chat(item.user_id)
+                if chat.username:
+                    label = f"@{chat.username}"
+                elif chat.full_name:
+                    label = f"{chat.full_name} ({item.user_id})"
+                else:
+                    label = str(item.user_id)
+            except Exception:
+                label = str(item.user_id)
         lines.append(f"• {label} — {format_number(item.pdf_count)} PDF")
     return "\n".join(lines)
 
 
-def format_report(stats) -> str:
+async def format_report(stats, bot: Bot) -> str:
     return (
         "📊 За сегодня:\n"
         f"- Новые пользователи: {format_number(stats.new_users_today)}\n"
@@ -35,7 +46,7 @@ def format_report(stats) -> str:
         f"- Пользователей: {format_number(stats.total_users)}\n"
         f"- PDF: {format_number(stats.pdf_total)}\n\n"
         "Последние:\n"
-        f"{format_recent(stats)}"
+        f"{await format_recent(stats, bot)}"
     )
 
 
@@ -44,7 +55,7 @@ def build_router(settings: Settings) -> Router:
 
     async def send_stats(message: Message):
         stats = await asyncio.to_thread(fetch_stats, settings)
-        text = format_report(stats)
+        text = await format_report(stats, message.bot)
         await message.answer(text)
 
     @router.message(Command("stat"))
