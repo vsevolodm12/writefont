@@ -4,7 +4,7 @@ from typing import Iterator
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-from stats_bot.config import Settings
+from config import Settings
 
 
 @contextmanager

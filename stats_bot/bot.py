@@ -5,8 +5,8 @@ from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from stats_bot.config import Settings, get_settings
-from stats_bot.stats_service import fetch_stats
+from config import Settings, get_settings
+from stats_service import fetch_stats
 
 
 def format_number(value: int) -> str:

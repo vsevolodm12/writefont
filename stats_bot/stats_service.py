@@ -3,8 +3,8 @@ from typing import List
 
 from psycopg2.extras import RealDictRow
 
-from stats_bot.config import Settings
-from stats_bot.database import get_cursor
+from config import Settings
+from database import get_cursor
 
 
 @dataclass
