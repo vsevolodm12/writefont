@@ -72,7 +72,11 @@ def create_tables():
                 font_path TEXT,
                 page_format VARCHAR(20) DEFAULT 'A4',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
         

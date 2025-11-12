@@ -17,7 +17,13 @@ async def process_format_callback(callback: CallbackQuery):
     user_id = callback.from_user.id
     
     # Убеждаемся что пользователь существует
-    get_or_create_user(user_id)
+    telegram_user = callback.from_user
+    get_or_create_user(
+        user_id,
+        username=getattr(telegram_user, "username", None),
+        first_name=getattr(telegram_user, "first_name", None),
+        last_name=getattr(telegram_user, "last_name", None),
+    )
     
     # Извлекаем формат из callback_data
     format_type = callback.data.replace("format_", "")

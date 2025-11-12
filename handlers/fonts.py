@@ -49,7 +49,13 @@ async def handle_font_file(message: Message, file_ext: str):
     try:
         # Убеждаемся что пользователь существует
         from utils.db_utils import get_or_create_user
-        get_or_create_user(user_id)
+        telegram_user = message.from_user
+        get_or_create_user(
+            user_id,
+            username=getattr(telegram_user, "username", None),
+            first_name=getattr(telegram_user, "first_name", None),
+            last_name=getattr(telegram_user, "last_name", None),
+        )
         
         # Получаем информацию о файле
         file = message.document

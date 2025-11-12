@@ -11,6 +11,8 @@ from database import get_cursor
 class RecentUser:
     user_id: int
     username: str
+    first_name: str
+    last_name: str
     pdf_count: int
 
 
@@ -24,11 +26,10 @@ class Stats:
 
 
 def _safe_username(row: RealDictRow) -> str:
-    # в основной БД username может отсутствовать
     username = row.get("username")
     if username:
         return username
-    return "—"
+    return ""
 
 
 def fetch_stats(settings: Settings) -> Stats:
@@ -68,12 +69,14 @@ def fetch_stats(settings: Settings) -> Stats:
             """
             SELECT
                 u.user_id,
-                NULL::text AS username,
+                COALESCE(u.username, '') AS username,
+                COALESCE(u.first_name, '') AS first_name,
+                COALESCE(u.last_name, '') AS last_name,
                 COUNT(j.*) AS pdf_count,
                 MAX(j.completed_at) AS last_completed_at
             FROM users u
             JOIN jobs j ON j.user_id = u.user_id AND j.status = 'completed'
-            GROUP BY u.user_id
+            GROUP BY u.user_id, u.username, u.first_name, u.last_name
             ORDER BY last_completed_at DESC NULLS LAST
             LIMIT 5
             """
@@ -84,6 +87,8 @@ def fetch_stats(settings: Settings) -> Stats:
         RecentUser(
             user_id=row["user_id"],
             username=_safe_username(row),
+            first_name=row.get("first_name", ""),
+            last_name=row.get("last_name", ""),
             pdf_count=row["pdf_count"],
         )
         for row in rows

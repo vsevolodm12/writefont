@@ -136,7 +136,13 @@ async def cmd_start(message: Message):
     try:
         logger.info(f"Processing /start for user {user_id}, message_id={message_id}")
         
-        user = get_or_create_user(user_id)
+        telegram_user = message.from_user
+        user = get_or_create_user(
+            user_id,
+            username=getattr(telegram_user, "username", None),
+            first_name=getattr(telegram_user, "first_name", None),
+            last_name=getattr(telegram_user, "last_name", None),
+        )
         user_info = get_user_info(user_id)
         
         fonts_by_type = get_user_fonts_by_type(user_id)
@@ -190,7 +196,13 @@ async def cmd_start(message: Message):
 async def menu_main(callback: CallbackQuery):
     """Главное меню"""
     user_id = callback.from_user.id
-    user = get_or_create_user(user_id)
+    telegram_user = callback.from_user
+    user = get_or_create_user(
+        user_id,
+        username=getattr(telegram_user, "username", None),
+        first_name=getattr(telegram_user, "first_name", None),
+        last_name=getattr(telegram_user, "last_name", None),
+    )
     user_info = get_user_info(user_id)
     
     fonts_by_type = get_user_fonts_by_type(user_id)

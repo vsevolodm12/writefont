@@ -411,29 +411,34 @@ def sync_user_font_variants(user_id: int) -> None:
     update_user_variant_fonts(user_id, variants)
 
 
-def get_or_create_user(user_id: int):
-    """Получает пользователя из БД или создает нового."""
+def get_or_create_user(
+    user_id: int,
+    username: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+):
+    """Получает пользователя из БД или создает нового, обновляя профиль."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     try:
-        # Проверяем, существует ли пользователь
-        cursor.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+        cursor.execute(
+            """
+            INSERT INTO users (user_id, page_format, username, first_name, last_name, last_seen_at)
+            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (user_id) DO UPDATE SET
+                username = COALESCE(EXCLUDED.username, users.username),
+                first_name = COALESCE(EXCLUDED.first_name, users.first_name),
+                last_name = COALESCE(EXCLUDED.last_name, users.last_name),
+                last_seen_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING user_id, font_path, page_format
+            """,
+            (user_id, 'A4', username, first_name, last_name),
+        )
         user = cursor.fetchone()
-        
-        if not user:
-            # Создаем нового пользователя
-            cursor.execute(
-                """
-                INSERT INTO users (user_id, page_format)
-                VALUES (%s, %s)
-                RETURNING user_id, font_path, page_format
-                """,
-                (user_id, 'A4')
-            )
-            conn.commit()
-            user = cursor.fetchone()
-        
+        conn.commit()
+
         return {
             'user_id': user[0],
             'font_path': user[1],

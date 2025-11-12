@@ -23,16 +23,20 @@ async def format_recent(stats, bot: Bot) -> str:
         if user_tag:
             label = f"@{user_tag}"
         else:
-            try:
-                chat = await bot.get_chat(item.user_id)
-                if chat.username:
-                    label = f"@{chat.username}"
-                elif chat.full_name:
-                    label = f"{chat.full_name} ({item.user_id})"
-                else:
+            name_parts = [part for part in [item.first_name.strip(), item.last_name.strip()] if part]
+            if name_parts:
+                label = f"{' '.join(name_parts)} ({item.user_id})"
+            else:
+                try:
+                    chat = await bot.get_chat(item.user_id)
+                    if chat.username:
+                        label = f"@{chat.username}"
+                    elif chat.full_name:
+                        label = f"{chat.full_name} ({item.user_id})"
+                    else:
+                        label = str(item.user_id)
+                except Exception:
                     label = str(item.user_id)
-            except Exception:
-                label = str(item.user_id)
         lines.append(f"• {label} — {format_number(item.pdf_count)} PDF")
     return "\n".join(lines)
 

@@ -166,7 +166,13 @@ async def handle_text_message(message: Message):
     user = get_user_info(user_id)
     if not user:
         from utils.db_utils import get_or_create_user
-        user = get_or_create_user(user_id)
+        telegram_user = message.from_user
+        user = get_or_create_user(
+            user_id,
+            username=getattr(telegram_user, "username", None),
+            first_name=getattr(telegram_user, "first_name", None),
+            last_name=getattr(telegram_user, "last_name", None),
+        )
     
     ready_font_set = has_minimum_font_set(user_id)
     if not ready_font_set:
