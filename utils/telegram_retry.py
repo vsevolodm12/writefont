@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 async def call_with_retries(
     method: Callable[..., Awaitable[Any]],
     *args: Any,
-    attempts: int = 3,
-    base_delay: float = 2.0,
+    attempts: int = 4,
+    base_delay: float = 1.0,
     **kwargs: Any,
 ) -> Any:
     """

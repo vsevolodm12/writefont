@@ -4,6 +4,8 @@
 
 import asyncio
 import logging
+import socket
+from aiohttp import ClientTimeout, TCPConnector
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -102,7 +104,9 @@ async def main():
             sys.exit(1)
 
     # Создаем бота и диспетчер
-    session = AiohttpSession(timeout=120)
+    timeout = ClientTimeout(total=120, connect=30, sock_connect=30, sock_read=120)
+    connector = TCPConnector(limit=64, force_close=True, family=socket.AF_INET)
+    session = AiohttpSession(timeout=timeout, connector=connector)
     bot = Bot(
         token=BOT_TOKEN,
         session=session,
