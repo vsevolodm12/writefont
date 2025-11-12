@@ -13,6 +13,18 @@ def format_number(value: int) -> str:
     return f"{value:,}".replace(",", " ")
 
 
+async def resolve_username(bot: Bot, user_id: int) -> str:
+    try:
+        chat = await bot.get_chat(user_id)
+        if chat.username:
+            return f"@{chat.username}"
+        if chat.full_name:
+            return f"{chat.full_name} ({user_id})"
+    except Exception:
+        pass
+    return str(user_id)
+
+
 async def format_recent(stats, bot: Bot) -> str:
     if not stats.recent_users:
         return "—"
@@ -27,31 +39,47 @@ async def format_recent(stats, bot: Bot) -> str:
             if name_parts:
                 label = f"{' '.join(name_parts)} ({item.user_id})"
             else:
-                try:
-                    chat = await bot.get_chat(item.user_id)
-                    if chat.username:
-                        label = f"@{chat.username}"
-                    elif chat.full_name:
-                        label = f"{chat.full_name} ({item.user_id})"
-                    else:
-                        label = str(item.user_id)
-                except Exception:
-                    label = str(item.user_id)
+                label = await resolve_username(bot, item.user_id)
         lines.append(f"• {label} — {format_number(item.pdf_count)} PDF")
     return "\n".join(lines)
+
+
+async def format_section(title: str, items: List[str]) -> str:
+    return title + ("\n".join(items) if items else "—")
 
 
 async def format_report(stats, bot: Bot) -> str:
     return (
         "📊 За сегодня:\n"
         f"- Новые пользователи: {format_number(stats.new_users_today)}\n"
+        f"- Активных пользователей: {format_number(stats.active_today)}\n"
         f"- Генераций PDF: {format_number(stats.pdf_today)}\n\n"
         "📈 За всё время:\n"
         f"- Пользователей: {format_number(stats.total_users)}\n"
         f"- PDF: {format_number(stats.pdf_total)}\n\n"
-        "Последние:\n"
-        f"{await format_recent(stats, bot)}"
+        "Последние генерации:\n"
+        f"{await format_recent(stats, bot)}\n\n"
+        "💬 Последние визиты:\n"
+        f"{await format_recent_visitors(stats, bot)}"
     )
+
+
+async def format_recent_visitors(stats, bot: Bot) -> str:
+    if not stats.recent_visitors:
+        return "—"
+    lines: List[str] = []
+    for item in stats.recent_visitors:
+        user_tag = item.username.strip() if item.username else ""
+        if user_tag:
+            label = f"@{user_tag}"
+        else:
+            name_parts = [part for part in [item.first_name.strip(), item.last_name.strip()] if part]
+            if name_parts:
+                label = f"{' '.join(name_parts)} ({item.user_id})"
+            else:
+                label = await resolve_username(bot, item.user_id)
+        lines.append(f"• {label}")
+    return "\n".join(lines)
 
 
 def build_router(settings: Settings) -> Router:
