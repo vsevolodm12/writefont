@@ -2,6 +2,41 @@
 
 ## Продовый деплой (Ubuntu / Systemd)
 
+### Статистический бот `/start`
+
+1. Обновить код: `cd /opt/consp_bot && git pull origin main`.
+2. Настроить окружение статбота:
+   ```bash
+   cd /opt/consp_bot/stats_bot
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   deactivate
+   ```
+3. Создать `.env` (пример в `stats_bot/env.example`). Ключевые поля: `BOT_TOKEN`, `DB_*`, `DB_PASSWORD` (совпадает с основным ботом).
+4. systemd-юнит `/etc/systemd/system/consp-stats.service`:
+   ```ini
+   [Unit]
+   Description=Consp Statistics Bot
+   After=network-online.target
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   WorkingDirectory=/opt/consp_bot/stats_bot
+   EnvironmentFile=/opt/consp_bot/stats_bot/.env
+   ExecStart=/opt/consp_bot/stats_bot/venv/bin/python bot.py
+   Restart=always
+   RestartSec=5
+   User=root
+   Group=root
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+5. Запуск: `sudo systemctl daemon-reload && sudo systemctl enable consp-stats && sudo systemctl restart consp-stats`
+6. Проверка: `sudo systemctl status consp-stats --no-pager`, `sudo journalctl -u consp-stats -f`. Команда `/start` в чате со статботом должна вернуть сводку.
+
 ### 1. Обновление кода и миграций одной командой
 На сервере (под пользователем с доступом к `/opt/consp_bot`):
 
