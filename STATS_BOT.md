@@ -70,6 +70,12 @@ DB_PASSWORD=***
    sudo systemctl status consp-stats --no-pager
    ```
 
+6. Логи и проверка:
+   ```bash
+   sudo journalctl -u consp-stats -f          # поток логов
+   sudo journalctl -u consp-stats -n 200      # последние записи
+   ```
+
 Проверка: `sudo journalctl -u consp-stats -f` и сообщение `/start` боту.
 
 ## Известные грабли
