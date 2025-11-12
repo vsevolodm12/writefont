@@ -42,11 +42,18 @@ def format_report(stats) -> str:
 def build_router(settings: Settings) -> Router:
     router = Router()
 
-    @router.message(Command("stat"))
-    async def cmd_stat(message: Message):
+    async def send_stats(message: Message):
         stats = await asyncio.to_thread(fetch_stats, settings)
         text = format_report(stats)
         await message.answer(text)
+
+    @router.message(Command("stat"))
+    async def cmd_stat(message: Message):
+        await send_stats(message)
+
+    @router.message(Command("start"))
+    async def cmd_start(message: Message):
+        await send_stats(message)
 
     return router
 
