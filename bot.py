@@ -104,8 +104,7 @@ async def main():
             sys.exit(1)
 
     # Создаем бота и диспетчер
-    timeout = ClientTimeout(total=90, connect=15, sock_connect=15, sock_read=45)
-    session = AiohttpSession(timeout=timeout)
+    session = AiohttpSession(timeout=60)
     bot = Bot(
         token=BOT_TOKEN,
         session=session,
