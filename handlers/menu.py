@@ -178,12 +178,26 @@ async def cmd_start(message: Message):
             welcome_text += "⚠️ Загрузите шрифты по шагам, прежде чем создавать PDF.\n\n"
         welcome_text += "Выберите действие:"
         
-        # Отправляем главное меню сразу, без таймаутов и fallback'ов
-        await message.answer(
-            welcome_text,
-            reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate),
-        )
-        logger.info(f"✓ Successfully sent /start response to user {user_id}")
+        # Отправляем главное меню в фоне, чтобы обработчик не блокировался
+        keyboard = get_main_menu_keyboard(grid_enabled, ready_to_generate)
+        
+        async def send_start():
+            try:
+                await message.answer(welcome_text, reply_markup=keyboard)
+                logger.info(f"✓ Successfully sent /start response to user {user_id}")
+            except Exception as exc:
+                logger.error(f"✗ Failed to send /start to user {user_id}: {exc}")
+                # Пробуем еще раз через 2 секунды
+                try:
+                    await asyncio.sleep(2)
+                    await message.answer(welcome_text, reply_markup=keyboard)
+                    logger.info(f"✓ Successfully sent /start on retry to user {user_id}")
+                except Exception as retry_exc:
+                    logger.error(f"✗ Retry also failed for /start to user {user_id}: {retry_exc}")
+        
+        # Запускаем в фоне - обработчик сразу завершается
+        asyncio.create_task(send_start())
+        logger.info(f"✓ /start task created for user {user_id}")
         
     except Exception as e:
         logger.error(f"✗ Error in /start handler for user {user_id}: {e}", exc_info=True)
