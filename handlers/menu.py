@@ -178,46 +178,12 @@ async def cmd_start(message: Message):
             welcome_text += "⚠️ Загрузите шрифты по шагам, прежде чем создавать PDF.\n\n"
         welcome_text += "Выберите действие:"
         
-        # Пытаемся отправить сразу с коротким таймаутом
-        keyboard = get_main_menu_keyboard(grid_enabled, ready_to_generate)
-        sent = False
-        
-        try:
-            # Пробуем отправить с таймаутом 2 секунды
-            await asyncio.wait_for(
-                message.answer(welcome_text, reply_markup=keyboard),
-                timeout=2.0
-            )
-            logger.info(f"✓ Successfully sent /start response to user {user_id}")
-            sent = True
-        except asyncio.TimeoutError:
-            logger.warning(f"Timeout sending /start to user {user_id}, sending fallback and retrying in background")
-        except Exception as exc:
-            logger.warning(f"Failed to send /start to user {user_id}: {exc}, sending fallback and retrying in background")
-        
-        # Если не получилось - отправляем простое сообщение сразу и продолжаем в фоне
-        if not sent:
-            try:
-                await message.answer("⏳ Загружаю меню...")
-                logger.info(f"✓ Sent fallback message to user {user_id}")
-            except Exception as fallback_exc:
-                logger.error(f"✗ Even fallback failed for user {user_id}: {fallback_exc}")
-            
-            # Продолжаем попытки в фоне
-            async def retry_in_background():
-                for attempt in range(1, 4):
-                    try:
-                        await asyncio.sleep(1.0 * attempt)  # 1s, 2s, 3s
-                        await message.answer(welcome_text, reply_markup=keyboard)
-                        logger.info(f"✓ Successfully sent /start in background (attempt {attempt}) to user {user_id}")
-                        return
-                    except Exception as bg_exc:
-                        if attempt < 3:
-                            logger.warning(f"Background attempt {attempt} failed for /start: {bg_exc}")
-                        else:
-                            logger.error(f"✗ All background attempts failed for /start to user {user_id}: {bg_exc}")
-            
-            asyncio.create_task(retry_in_background())
+        # Отправляем главное меню сразу, без таймаутов и fallback'ов
+        await message.answer(
+            welcome_text,
+            reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate),
+        )
+        logger.info(f"✓ Successfully sent /start response to user {user_id}")
         
     except Exception as e:
         logger.error(f"✗ Error in /start handler for user {user_id}: {e}", exc_info=True)
