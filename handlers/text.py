@@ -136,6 +136,31 @@ def _build_missing_message(missing: set[str], progress: dict) -> str:
     return "\n".join(lines)
 
 
+async def _deliver_pdf(message: Message, pdf_path: str, execution_time_ms: int, grid_enabled: bool) -> None:
+    from handlers.menu import get_main_menu_keyboard
+
+    try:
+        pdf_file = FSInputFile(pdf_path)
+        await call_with_retries(
+            message.answer_document,
+            document=pdf_file,
+            caption=f"✓ PDF сгенерирован\nВремя: {execution_time_ms}мс",
+        )
+
+        await call_with_retries(
+            message.answer,
+            "💡 Отправьте новый текст:\nя создам еще один конспект",
+            reply_markup=get_main_menu_keyboard(grid_enabled),
+        )
+    except Exception as exc:
+        logger.error("Не удалось отправить PDF: %s", exc, exc_info=True)
+        await call_with_retries(
+            message.answer,
+            "⚠️ Не удалось сразу отправить PDF. Попробуйте ещё раз, если Telegram задерживает доставку.",
+            reply_markup=get_main_menu_keyboard(grid_enabled),
+        )
+
+
 @router.message(F.text & ~F.text.startswith('/'))
 async def handle_text_message(message: Message):
     """Обработчик текстовых сообщений для сохранения в jobs и генерации PDF"""
@@ -281,21 +306,8 @@ async def handle_text_message(message: Message):
         
         # Отправляем PDF пользователю
         if os.path.exists(pdf_path):
-            from handlers.menu import get_main_menu_keyboard
-            
-            pdf_file = FSInputFile(pdf_path)
-            await call_with_retries(
-                message.answer_document,
-                document=pdf_file,
-                caption=f"✓ PDF сгенерирован\nВремя: {execution_time_ms}мс",
-            )
-            
-            # Предлагаем создать еще один
-            await call_with_retries(
-                message.answer,
-                "💡 Отправьте новый текст:\nя создам еще один конспект",
-                reply_markup=get_main_menu_keyboard(),
-            )
+            await call_with_retries(message.answer, "📄 PDF готов, отправляю…")
+            asyncio.create_task(_deliver_pdf(message, pdf_path, execution_time_ms, grid_enabled))
         else:
             from handlers.menu import get_main_menu_keyboard
             await call_with_retries(
