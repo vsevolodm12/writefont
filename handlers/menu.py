@@ -14,7 +14,7 @@ from utils.db_utils import (
     get_user_fonts_by_type,
 )
 from config import PAGE_FORMATS
-from utils.telegram_retry import call_with_retries, call_with_fast_retries
+from utils.telegram_retry import call_with_retries
 
 router = Router()
 
@@ -177,25 +177,25 @@ async def cmd_start(message: Message):
             welcome_text += "⚠️ Загрузите шрифты по шагам, прежде чем создавать PDF.\n\n"
         welcome_text += "Выберите действие:"
         
-        # Отправляем сообщение только один раз (быстрые ретраи для мгновенного ответа)
+        # Отправляем сообщение напрямую без ретраев для мгновенного ответа
         try:
-            await call_with_fast_retries(
-                message.answer,
+            await message.answer(
                 welcome_text,
                 reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate),
             )
             logger.info(f"✓ Successfully sent /start response to user {user_id}")
         except Exception as send_exc:
-            # Fallback: если не удалось отправить с клавиатурой, отправляем простой текст
-            logger.warning(f"Failed to send /start with keyboard, trying fallback: {send_exc}")
+            # Если не получилось - пробуем еще раз напрямую (один раз, без задержек)
+            logger.warning(f"First attempt failed for /start, retrying once: {send_exc}")
             try:
                 await message.answer(
-                    welcome_text + "\n\n⚠️ Кнопки временно недоступны из-за проблем с сетью.",
+                    welcome_text,
+                    reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate),
                 )
-                logger.info(f"✓ Sent /start fallback response to user {user_id}")
-            except Exception as fallback_exc:
-                logger.error(f"✗ Failed to send /start even with fallback: {fallback_exc}")
-                raise
+                logger.info(f"✓ Successfully sent /start response on retry to user {user_id}")
+            except Exception as retry_exc:
+                logger.error(f"✗ Failed to send /start after retry to user {user_id}: {retry_exc}", exc_info=True)
+                # Не падаем - просто логируем ошибку, чтобы бот продолжал работать
         
     except Exception as e:
         logger.error(f"✗ Error in /start handler for user {user_id}: {e}", exc_info=True)
