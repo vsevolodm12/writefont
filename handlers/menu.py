@@ -2,6 +2,7 @@
 Главное меню и навигация
 """
 
+import asyncio
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -177,25 +178,31 @@ async def cmd_start(message: Message):
             welcome_text += "⚠️ Загрузите шрифты по шагам, прежде чем создавать PDF.\n\n"
         welcome_text += "Выберите действие:"
         
-        # Отправляем сообщение напрямую без ретраев для мгновенного ответа
-        try:
-            await message.answer(
-                welcome_text,
-                reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate),
-            )
-            logger.info(f"✓ Successfully sent /start response to user {user_id}")
-        except Exception as send_exc:
-            # Если не получилось - пробуем еще раз напрямую (один раз, без задержек)
-            logger.warning(f"First attempt failed for /start, retrying once: {send_exc}")
-            try:
-                await message.answer(
-                    welcome_text,
-                    reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate),
-                )
-                logger.info(f"✓ Successfully sent /start response on retry to user {user_id}")
-            except Exception as retry_exc:
-                logger.error(f"✗ Failed to send /start after retry to user {user_id}: {retry_exc}", exc_info=True)
-                # Не падаем - просто логируем ошибку, чтобы бот продолжал работать
+        # Отправляем сообщение в фоне, чтобы не блокировать обработчик
+        async def send_start_message():
+            """Отправка /start в фоне с повторными попытками"""
+            keyboard = get_main_menu_keyboard(grid_enabled, ready_to_generate)
+            max_attempts = 3
+            
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    await message.answer(
+                        welcome_text,
+                        reply_markup=keyboard,
+                    )
+                    logger.info(f"✓ Successfully sent /start response to user {user_id} (attempt {attempt})")
+                    return
+                except Exception as exc:
+                    if attempt < max_attempts:
+                        wait_time = 0.5 * attempt  # 0.5s, 1.0s
+                        logger.warning(f"Attempt {attempt} failed for /start, retrying in {wait_time}s: {exc}")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        logger.error(f"✗ Failed to send /start after {max_attempts} attempts to user {user_id}: {exc}")
+        
+        # Запускаем отправку в фоне - обработчик сразу завершается
+        asyncio.create_task(send_start_message())
+        logger.info(f"✓ /start task created for user {user_id}, sending in background")
         
     except Exception as e:
         logger.error(f"✗ Error in /start handler for user {user_id}: {e}", exc_info=True)
