@@ -63,4 +63,57 @@ async def call_with_retries(
         await asyncio.sleep(wait_time)
 
 
+async def call_with_fast_retries(
+    method: Callable[..., Awaitable[Any]],
+    *args: Any,
+    attempts: int = 2,
+    base_delay: float = 0.1,
+    **kwargs: Any,
+) -> Any:
+    """
+    Выполнить Telegram-метод с быстрыми повторными попытками (для отправки PDF).
+    Использует только 2 попытки с короткими задержками (0.1s, 0.2s).
+
+    :param method: корутина aiogram, например message.answer_document
+    :param attempts: количество попыток (по умолчанию 2)
+    :param base_delay: базовая задержка между повторениями (по умолчанию 0.1s)
+    :param args: позиционные аргументы для метода
+    :param kwargs: именованные аргументы для метода
+    """
+    last_exc: Exception | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            return await method(*args, **kwargs)
+        except TelegramRetryAfter as exc:
+            last_exc = exc
+            wait_time = max(exc.retry_after + 0.1, base_delay)
+            logger.warning(
+                "TelegramRetryAfter (%.1fs). Fast retry %s/%s",
+                wait_time,
+                attempt,
+                attempts,
+            )
+        except TelegramNetworkError as exc:
+            last_exc = exc
+            wait_time = base_delay * attempt
+            logger.warning(
+                "TelegramNetworkError (%s). Fast retry %s/%s, retry in %.1fs",
+                exc,
+                attempt,
+                attempts,
+                wait_time,
+            )
+        else:
+            return
+
+        if attempt == attempts:
+            logger.error("Fast retry attempts exhausted. Raising error.")
+            if last_exc is not None:
+                raise last_exc
+            raise RuntimeError("Fast retry attempts exhausted without captured exception")
+
+        await asyncio.sleep(wait_time)
+
+
 

@@ -17,7 +17,7 @@ from pdf_generator import generate_pdf_for_job
 from utils.executors import pdf_executor
 from utils.rate_limit import check_rate_limit
 from utils.metrics import metrics
-from utils.telegram_retry import call_with_retries
+from utils.telegram_retry import call_with_retries, call_with_fast_retries
 import time
 import os
 import asyncio
@@ -136,12 +136,13 @@ def _build_missing_message(missing: set[str], progress: dict) -> str:
     return "\n".join(lines)
 
 
-async def _deliver_pdf(message: Message, pdf_path: str, execution_time_ms: int, grid_enabled: bool) -> None:
+async def _deliver_pdf(message: Message, pdf_path: str, execution_time_ms: int, grid_enabled: bool, job_id: int) -> None:
     from handlers.menu import get_main_menu_keyboard
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
     try:
         pdf_file = FSInputFile(pdf_path)
-        await call_with_retries(
+        await call_with_fast_retries(
             message.answer_document,
             document=pdf_file,
             caption=f"✓ PDF сгенерирован\nВремя: {execution_time_ms}мс",
@@ -153,11 +154,14 @@ async def _deliver_pdf(message: Message, pdf_path: str, execution_time_ms: int, 
             reply_markup=get_main_menu_keyboard(grid_enabled),
         )
     except Exception as exc:
-        logger.error("Не удалось отправить PDF: %s", exc, exc_info=True)
+        logger.error("Не удалось отправить PDF (job_id=%s): %s", job_id, exc, exc_info=True)
+        retry_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Повторить отправку PDF", callback_data=f"retry_pdf_{job_id}")]
+        ])
         await call_with_retries(
             message.answer,
-            "⚠️ Не удалось сразу отправить PDF. Попробуйте ещё раз, если Telegram задерживает доставку.",
-            reply_markup=get_main_menu_keyboard(grid_enabled),
+            "⚠️ Не удалось отправить PDF из-за проблем с сетью.\n\nНажмите кнопку ниже, чтобы повторить отправку.",
+            reply_markup=retry_keyboard,
         )
 
 
@@ -277,7 +281,7 @@ async def handle_text_message(message: Message):
         job_id = cursor.fetchone()[0]
         conn.commit()
         
-        await call_with_retries(message.answer, "⏳ Генерирую PDF...")
+        await call_with_retries(message.answer, "⏳ Генерирую PDF... (может занять до 1-2 минут)")
         
         # Получаем настройку сетки
         grid_enabled = user.get('grid_enabled', False)
@@ -306,8 +310,7 @@ async def handle_text_message(message: Message):
         
         # Отправляем PDF пользователю
         if os.path.exists(pdf_path):
-            await call_with_retries(message.answer, "📄 PDF готов, отправляю…")
-            asyncio.create_task(_deliver_pdf(message, pdf_path, execution_time_ms, grid_enabled))
+            asyncio.create_task(_deliver_pdf(message, pdf_path, execution_time_ms, grid_enabled, job_id))
         else:
             from handlers.menu import get_main_menu_keyboard
             await call_with_retries(
