@@ -73,6 +73,12 @@ sudo systemctl status consp-bot
 - **Контроль размера PDF.** Слишком тяжёлый файл тоже может вызвать таймаут. При подозрении тикет: `ls -lh generated`.
 - **Advisory lock.** После краша polling освобождает лок. Если видите в логах «advisory lock не получен», значит уже запущен другой экземпляр (например, локальный dev). Надо остановить дубликат.
 
+### 5. Частые ошибки и решения
+- `HTTP Client says - ServerDisconnectedError`: Telegram рвёт соединение при отправке PDF. Проверяем `tail -f logs/bot_output.log`, ретраи уже настроены. Если ошибки повторяются — перезапуск `consp-bot`, проверка доступа до `https://api.telegram.org`, по необходимости прокси.
+- `TypeError: unsupported operand type(s) for +: 'ClientTimeout' and 'int'`: возникает при кастомном `ClientTimeout`. В текущей версии используется простой `timeout=60`; если правите `bot.py`, не передавайте объект `ClientTimeout` в aiogram.
+- `fe_sendauth: no password supplied`: статбот или основной бот не видит пароль к БД. Проверь `.env`: `DB_PASSWORD=...` должен совпадать для обоих сервисов.
+- Отсутствие username в статистике: основной бот теперь сохраняет `username/first_name/last_name` при каждом апдейте. Если пусто, попросите пользователя написать боту ещё раз.
+
 ---
 
 ## Локальный запуск (macOS)
