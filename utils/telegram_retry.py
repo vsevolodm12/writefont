@@ -15,7 +15,7 @@ async def call_with_retries(
     method: Callable[..., Awaitable[Any]],
     *args: Any,
     attempts: int = 4,
-    base_delay: float = 1.0,
+    base_delay: float = 0.5,
     **kwargs: Any,
 ) -> Any:
     """
