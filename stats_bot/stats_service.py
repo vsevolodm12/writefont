@@ -104,7 +104,7 @@ def fetch_stats(settings: Settings) -> Stats:
                 u.last_seen_at
             FROM users u
             ORDER BY u.last_seen_at DESC NULLS LAST
-            LIMIT 5
+            LIMIT 15
             """
         )
         recent_visitors_rows = cursor.fetchall()
