@@ -342,7 +342,7 @@ def get_actual_cell_height(page_size, cell_size=5*mm, margin=15*mm):
     return work_height / float(num_horizontal_cells) if num_horizontal_cells > 0 else cell_size
 
 
-def get_page_margins(page_number: int, first_page_side: str, cell_size, grid_enabled: bool, margin_default):
+def get_page_margins(page_number: int, first_page_side: str, cell_size, grid_enabled: bool, margin_default, page_format: str = None):
     """
     Возвращает отступы для страницы с учетом зеркальных полей для тетради.
     
@@ -352,6 +352,7 @@ def get_page_margins(page_number: int, first_page_side: str, cell_size, grid_ena
         cell_size: Размер клетки
         grid_enabled: Включена ли сетка
         margin_default: Дефолтный отступ
+        page_format: Формат страницы ('A4' или 'A5')
     
     Returns:
         (left_margin, right_margin) - отступы слева и справа
@@ -374,7 +375,11 @@ def get_page_margins(page_number: int, first_page_side: str, cell_size, grid_ena
         # Для тетради с клеткой
         if is_right_page:
             # Правая страница: больший отступ слева (чтобы не попасть под кольца)
-            left_margin = 4 * cell_size  # 20mm
+            # Уменьшаем на 1 клетку для смещения текста влево (только для формата с клеткой, не A4)
+            if page_format and page_format != 'A4':
+                left_margin = 4 * cell_size - cell_size  # 15mm (было 20mm) - смещение на 1 клетку влево
+            else:
+                left_margin = 4 * cell_size  # 20mm - без смещения для A4
             right_margin = 2 * cell_size  # 10mm
         else:
             # Левая страница: меньший отступ слева, больший справа
@@ -535,12 +540,20 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
     # Функция для получения отступов страницы
     def get_current_page_margins():
         page_num = c.getPageNumber()
-        return get_page_margins(page_num, first_page_side, cell_size, grid_enabled, margin_default)
+        return get_page_margins(page_num, first_page_side, cell_size, grid_enabled, margin_default, page_format)
     
     # Функция для получения начальной Y позиции при создании новой страницы
     def get_initial_y():
         if grid_enabled:
             grid_start_y = grid_margin
+            # Определяем, какая страница (правая или левая) для выравнивания текста
+            page_num = c.getPageNumber()
+            if first_page_side == 'right':
+                is_right_page = (page_num % 2) == 1
+            else:
+                is_right_page = (page_num % 2) == 0
+            
+            # Для обеих страниц используем одинаковый отступ (2 клетки)
             first_text_cell_index = 2
             # Вычисляем позицию Y от низа страницы (в ReportLab координаты снизу вверх)
             distance_from_top = grid_start_y + (first_text_cell_index + 1) * actual_cell_height
@@ -559,9 +572,17 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
         
         # Привязка к низу клетки: начинаем с первой строки текста
         # В ReportLab координаты идут снизу вверх, поэтому вычисляем от низа страницы
-        # Отступ сверху = 2 клетки, затем первая клетка для текста
+        # Отступ сверху = 2 клетки для обеих страниц
         grid_start_y = grid_margin  # это отступ от верха
-        first_text_cell_index = 2  # пропускаем 2 клетки сверху
+        # Определяем, какая страница (правая или левая) для выравнивания текста
+        page_num = c.getPageNumber()
+        if first_page_side == 'right':
+            is_right_page = (page_num % 2) == 1
+        else:
+            is_right_page = (page_num % 2) == 0
+        
+        # Для обеих страниц используем одинаковый отступ (2 клетки)
+        first_text_cell_index = 2
         # Вычисляем позицию Y от низа страницы (в ReportLab координаты снизу вверх)
         # Расстояние от верха = margin + (first_text_cell_index + 1) * actual_cell_height
         distance_from_top = grid_start_y + (first_text_cell_index + 1) * actual_cell_height
