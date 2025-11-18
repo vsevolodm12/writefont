@@ -92,10 +92,6 @@ async def handle_font_file(message: Message, file_ext: str):
 
         progress_text = _format_progress(progress)
 
-        fonts_summary = get_user_fonts_by_type(user_id)
-        base_fonts = fonts_summary.get("base", [])
-        base_line = f"👑 Базовый шрифт: {os.path.basename(base_fonts[0])}" if base_fonts else "⚠️ Базовый кириллический шрифт ещё не выбран."
-
         font_type_text = ""
         if font_type_added and font_type_added in FONT_TYPE_LABELS:
             font_type_text = f"📂 Категория: {FONT_TYPE_LABELS[font_type_added]}\n\n"
@@ -105,7 +101,6 @@ async def handle_font_file(message: Message, file_ext: str):
             (
                 f"✅ Шрифт загружен: {file_name}\n\n"
                 f"{font_type_text}"
-                f"{base_line}\n\n"
                 f"📊 Прогресс:\n{progress_text}"
             ),
             reply_markup=keyboard,

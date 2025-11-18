@@ -182,17 +182,24 @@ def get_font_requirement_progress(user_id: int) -> Dict[str, Dict[str, int]]:
         "cyrillic_full": {"current": X, "required": 3},
         ...
     }
+    Считает уникальные шрифты по их возможностям, а не по font_type.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         _ensure_fonts_table(cursor)
+        # Получаем все шрифты пользователя
         cursor.execute(
             """
-            SELECT font_type, COUNT(*)
+            SELECT DISTINCT path,
+                   supports_cyrillic_lower,
+                   supports_cyrillic_upper,
+                   supports_latin_lower,
+                   supports_latin_upper,
+                   supports_digits,
+                   supports_symbols
             FROM fonts
             WHERE user_id = %s
-            GROUP BY font_type
             """,
             (user_id,),
         )
@@ -201,13 +208,40 @@ def get_font_requirement_progress(user_id: int) -> Dict[str, Dict[str, int]]:
         cursor.close()
         return_db_connection(conn)
 
-    counts = {row[0]: row[1] for row in rows}
+    # Считаем шрифты по их возможностям
+    cyrillic_full_count = 0
+    digits_count = 0
+    latin_count = 0
+    
+    for row in rows:
+        path, cyr_lower, cyr_upper, lat_lower, lat_upper, digits, symbols = row
+        
+        # Кириллический полный (строчные И заглавные)
+        if cyr_lower and cyr_upper:
+            cyrillic_full_count += 1
+        
+        # Цифры и спецсимволы
+        if digits or symbols:
+            digits_count += 1
+        
+        # Латиница (строчные ИЛИ заглавные)
+        if lat_lower or lat_upper:
+            latin_count += 1
+    
     progress: Dict[str, Dict[str, int]] = {}
-    for font_type, required in FONT_REQUIREMENTS.items():
-        progress[font_type] = {
-            "current": counts.get(font_type, 0),
-            "required": required,
-        }
+    progress["cyrillic_full"] = {
+        "current": cyrillic_full_count,
+        "required": FONT_REQUIREMENTS.get("cyrillic_full", 3),
+    }
+    progress["digits"] = {
+        "current": digits_count,
+        "required": FONT_REQUIREMENTS.get("digits", 2),
+    }
+    progress["latin"] = {
+        "current": latin_count,
+        "required": FONT_REQUIREMENTS.get("latin", 2),
+    }
+    
     return progress
 
 
@@ -385,11 +419,12 @@ def get_fonts_for_generation(user_id: int) -> Dict[str, List[Dict[str, object]]]
 
 
 def has_minimum_font_set(user_id: int) -> bool:
-    progress = get_font_requirement_progress(user_id)
-    for requirement, info in progress.items():
-        if info["current"] < info["required"]:
-            return False
-    return True
+    """Проверяет, достаточно ли шрифтов для генерации PDF.
+    Достаточно хотя бы одного кириллического шрифта."""
+    fonts_by_type = get_user_fonts_by_type(user_id)
+    # Проверяем наличие хотя бы одного кириллического шрифта
+    cyrillic_fonts = fonts_by_type.get("base", []) + fonts_by_type.get("cyrillic", [])
+    return len(cyrillic_fonts) > 0
 
 
 def sync_user_font_variants(user_id: int) -> None:
@@ -422,20 +457,45 @@ def get_or_create_user(
     cursor = conn.cursor()
 
     try:
-        cursor.execute(
-            """
-            INSERT INTO users (user_id, page_format, username, first_name, last_name, last_seen_at)
-            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (user_id) DO UPDATE SET
-                username = COALESCE(EXCLUDED.username, users.username),
-                first_name = COALESCE(EXCLUDED.first_name, users.first_name),
-                last_name = COALESCE(EXCLUDED.last_name, users.last_name),
-                last_seen_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            RETURNING user_id, font_path, page_format
-            """,
-            (user_id, 'A4', username, first_name, last_name),
-        )
+        # Проверяем наличие колонок профиля
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name IN ('username', 'first_name', 'last_name', 'last_seen_at')
+        """)
+        existing_columns = {row[0] for row in cursor.fetchall()}
+        
+        has_profile_fields = 'username' in existing_columns
+        
+        if has_profile_fields:
+            # Используем полный запрос с профильными полями
+            cursor.execute(
+                """
+                INSERT INTO users (user_id, page_format, username, first_name, last_name, last_seen_at)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    username = COALESCE(EXCLUDED.username, users.username),
+                    first_name = COALESCE(EXCLUDED.first_name, users.first_name),
+                    last_name = COALESCE(EXCLUDED.last_name, users.last_name),
+                    last_seen_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING user_id, font_path, page_format
+                """,
+                (user_id, 'A4', username, first_name, last_name),
+            )
+        else:
+            # Используем упрощенный запрос без профильных полей
+            cursor.execute(
+                """
+                INSERT INTO users (user_id, page_format)
+                VALUES (%s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING user_id, font_path, page_format
+                """,
+                (user_id, 'A4'),
+            )
+        
         user = cursor.fetchone()
         conn.commit()
 
@@ -509,27 +569,59 @@ def get_user_info(user_id: int):
     cursor = conn.cursor()
     
     try:
-        cursor.execute(
-            "SELECT user_id, font_path, page_format, COALESCE(grid_enabled, FALSE), variant_fonts FROM users WHERE user_id = %s",
-            (user_id,)
-        )
+        # Проверяем наличие колонок
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name IN ('grid_enabled', 'variant_fonts', 'first_page_side')
+        """)
+        existing_columns = {row[0] for row in cursor.fetchall()}
+        
+        has_grid = 'grid_enabled' in existing_columns
+        has_variants = 'variant_fonts' in existing_columns
+        has_first_page_side = 'first_page_side' in existing_columns
+        
+        # Формируем запрос в зависимости от наличия колонок
+        select_fields = ["user_id", "font_path", "page_format"]
+        if has_grid:
+            select_fields.append("COALESCE(grid_enabled, FALSE)")
+        else:
+            select_fields.append("FALSE")
+        
+        if has_variants:
+            select_fields.append("variant_fonts")
+        else:
+            select_fields.append("NULL")
+        
+        if has_first_page_side:
+            select_fields.append("COALESCE(first_page_side, 'right')")
+        else:
+            select_fields.append("'right'")
+        
+        query = f"SELECT {', '.join(select_fields)} FROM users WHERE user_id = %s"
+        cursor.execute(query, (user_id,))
         user = cursor.fetchone()
         
         if user:
             # Парсим JSON для variant_fonts
             variant_fonts = []
-            if len(user) > 4 and user[4]:
+            variant_idx = 4 if has_variants else None
+            if variant_idx is not None and len(user) > variant_idx and user[variant_idx]:
                 try:
-                    variant_fonts = json.loads(user[4]) if isinstance(user[4], str) else user[4]
+                    variant_fonts = json.loads(user[variant_idx]) if isinstance(user[variant_idx], str) else user[variant_idx]
                 except (json.JSONDecodeError, TypeError):
                     variant_fonts = []
+            
+            first_page_side_idx = 5 if has_first_page_side else None
+            first_page_side = user[first_page_side_idx] if first_page_side_idx is not None and len(user) > first_page_side_idx else 'right'
             
             return {
                 'user_id': user[0],
                 'font_path': user[1],
                 'page_format': user[2],
                 'grid_enabled': user[3] if len(user) > 3 else False,
-                'variant_fonts': variant_fonts if isinstance(variant_fonts, list) else []
+                'variant_fonts': variant_fonts if isinstance(variant_fonts, list) else [],
+                'first_page_side': first_page_side
             }
         return None
     finally:
@@ -567,6 +659,47 @@ def update_user_grid_setting(user_id: int, grid_enabled: bool):
             WHERE user_id = %s
             """,
             (grid_enabled, user_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
+
+
+def update_user_first_page_side(user_id: int, first_page_side: str):
+    """Обновляет настройку стороны первой страницы пользователя."""
+    if first_page_side not in ['left', 'right']:
+        raise ValueError("first_page_side must be 'left' or 'right'")
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Проверяем существует ли колонка
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name='first_page_side'
+        """)
+        
+        if not cursor.fetchone():
+            # Добавляем колонку если не существует
+            cursor.execute("""
+                ALTER TABLE users 
+                ADD COLUMN first_page_side VARCHAR(10) DEFAULT 'right'
+            """)
+            conn.commit()
+        
+        cursor.execute(
+            """
+            UPDATE users 
+            SET first_page_side = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s
+            """,
+            (first_page_side, user_id)
         )
         conn.commit()
         return cursor.rowcount > 0

@@ -151,7 +151,7 @@ async def _deliver_pdf(message: Message, pdf_path: str, execution_time_ms: int, 
         await call_with_retries(
             message.answer,
             "💡 Отправьте новый текст:\nя создам еще один конспект",
-            reply_markup=get_main_menu_keyboard(grid_enabled),
+            reply_markup=get_main_menu_keyboard(),
         )
     except Exception as exc:
         logger.error("Не удалось отправить PDF (job_id=%s): %s", job_id, exc, exc_info=True)
@@ -205,16 +205,12 @@ async def handle_text_message(message: Message):
     
     ready_font_set = has_minimum_font_set(user_id)
     if not ready_font_set:
-        progress = get_font_requirement_progress(user_id)
-        progress_text = _format_progress(progress)
         from handlers.menu import get_main_menu_keyboard
-        grid_enabled = user.get('grid_enabled', False)
         await call_with_retries(
             message.answer,
-            "⚠️ Перед генерацией нужно загрузить необходимые шрифты.\n\n"
-            f"{progress_text}\n\n"
-            "Используйте кнопку «📥 Загрузить шрифты» и следуйте инструкции.",
-            reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate=False),
+            "⚠️ Загрузите хотя бы один кириллический шрифт для генерации PDF.\n\n"
+            "Используйте кнопку «📥 Загрузить шрифты».",
+            reply_markup=get_main_menu_keyboard(ready_to_generate=False),
         )
         return
     
@@ -244,8 +240,8 @@ async def handle_text_message(message: Message):
         from handlers.menu import get_main_menu_keyboard
         await call_with_retries(
             message.answer,
-            "❌ Базовый кириллический шрифт не найден.\n\nЗагрузите или переустановите шрифты.",
-            reply_markup=get_main_menu_keyboard(user.get('grid_enabled', False), ready_to_generate=False),
+            "❌ Шрифты не найдены.\n\nЗагрузите или переустановите шрифты.",
+            reply_markup=get_main_menu_keyboard(ready_to_generate=False),
         )
         return
 
@@ -255,11 +251,10 @@ async def handle_text_message(message: Message):
         progress = get_font_requirement_progress(user_id)
         warning_text = _build_missing_message(missing_categories, progress)
         from handlers.menu import get_main_menu_keyboard
-        grid_enabled = user.get('grid_enabled', False)
         await call_with_retries(
             message.answer,
             warning_text,
-            reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate=False),
+            reply_markup=get_main_menu_keyboard(ready_to_generate=False),
         )
         return
     
@@ -283,8 +278,9 @@ async def handle_text_message(message: Message):
         
         await call_with_retries(message.answer, "⏳ Генерирую PDF... (может занять до 1-2 минут)")
         
-        # Получаем настройку сетки
+        # Получаем настройки
         grid_enabled = user.get('grid_enabled', False)
+        first_page_side = user.get('first_page_side', 'right')
         
         # Генерируем PDF асинхронно в отдельном потоке
         start_time = time.time()
@@ -297,6 +293,7 @@ async def handle_text_message(message: Message):
             font_sets,
             user['page_format'],
             grid_enabled,
+            first_page_side,
         )
         execution_time_ms = int((time.time() - start_time) * 1000)
         

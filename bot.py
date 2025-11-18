@@ -10,7 +10,7 @@ from aiogram.enums import ParseMode
 
 from config import BOT_TOKEN
 from config import WEBHOOK_URL, WEBHOOK_SECRET, WEBAPP_HOST, WEBAPP_PORT, WEBHOOK_PATH
-from handlers import commands, fonts, callbacks, text, menu, grid
+from handlers import commands, fonts, callbacks, text, menu, grid, settings
 
 # Настройка логирования
 import os
@@ -113,6 +113,7 @@ async def main():
     
     # menu.router регистрируем первым из основных, чтобы он обрабатывал /start
     dp.include_router(menu.router)  # Главное меню - перехватывает /start и /menu
+    dp.include_router(settings.router)  # Меню настроек
     
     # Остальные роутеры (commands.router пустой, но оставляем на случай)
     dp.include_router(commands.router)

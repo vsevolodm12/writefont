@@ -63,12 +63,29 @@ class FontSelector:
         return unique
 
     def _font_supports_char(self, font_name: Optional[str], char: str) -> bool:
+        """Проверяет, поддерживает ли шрифт символ"""
         if not font_name or not char:
             return False
         try:
-            pdfmetrics.stringWidth(char, font_name, 12)
+            # Пробуем получить ширину символа - если символ не поддерживается, будет исключение
+            width = pdfmetrics.stringWidth(char, font_name, 12)
+            # Если ширина 0 для видимого символа (не пробел), возможно символ не поддерживается
+            # Но для пробелов и некоторых специальных символов это нормально
+            if width == 0 and not char.isspace():
+                # Дополнительная проверка: пробуем нарисовать текст и проверить результат
+                # Но это слишком сложно, поэтому просто считаем что если stringWidth не выбросил исключение,
+                # то символ поддерживается
+                pass
             return True
         except KeyError:
+            # KeyError - шрифт не зарегистрирован или символ не поддерживается
+            return False
+        except (ValueError, TypeError, AttributeError):
+            # Другие ошибки - возможно символ не поддерживается
+            return False
+        except Exception as e:
+            # На всякий случай ловим все остальные исключения
+            # Но для отладки можно залогировать
             return False
 
     def _choose_from_pool(self, char, used_fonts_per_char, pool, requirement, allow_base_fallback=True):
@@ -138,16 +155,36 @@ class FontSelector:
 
         # Пунктуация и прочие символы
         if unicodedata.category(char).startswith(("P", "S")):
-            if self.base_font_name and self._font_supports_char(self.base_font_name, char):
-                return self.base_font_name
-            if self.default_font_name and self._font_supports_char(self.default_font_name, char):
-                return self.default_font_name
-            # попробуем подобрать из прочих наборов, но без повторов
-            pool = self.cyrillic_fonts + self.latin_fonts + self.digit_fonts + self.other_fonts
-            for rec in pool:
+            # Проверяем шрифты в порядке приоритета:
+            # 1. Шрифты с цифрами (часто содержат пунктуацию)
+            # 2. Базовый шрифт
+            # 3. Остальные шрифты
+            # 4. Default шрифт
+            
+            # Сначала проверяем шрифты с цифрами (они часто содержат пунктуацию)
+            for rec in self.digit_fonts:
                 font_name = self.font_name_map.get(rec.get("path"))
                 if font_name and self._font_supports_char(font_name, char):
                     return font_name
+            
+            # Затем базовый шрифт
+            if self.base_meta and self.base_meta.get("path") in self.font_name_map:
+                base_font_name = self.font_name_map[self.base_meta["path"]]
+                if base_font_name and self._font_supports_char(base_font_name, char):
+                    return base_font_name
+            
+            # Затем остальные шрифты
+            other_fonts = self.cyrillic_fonts + self.latin_fonts + self.other_fonts
+            for rec in other_fonts:
+                font_name = self.font_name_map.get(rec.get("path"))
+                if font_name and self._font_supports_char(font_name, char):
+                    return font_name
+            
+            # Если ничего не подошло, пробуем default
+            if self.default_font_name and self._font_supports_char(self.default_font_name, char):
+                return self.default_font_name
+            
+            # В крайнем случае возвращаем базовый (даже если он не поддерживает)
             return self.base_font_name or self.default_font_name
 
         return self.base_font_name or self.default_font_name
@@ -305,6 +342,56 @@ def get_actual_cell_height(page_size, cell_size=5*mm, margin=15*mm):
     return work_height / float(num_horizontal_cells) if num_horizontal_cells > 0 else cell_size
 
 
+def get_page_margins(page_number: int, first_page_side: str, cell_size, grid_enabled: bool, margin_default):
+    """
+    Возвращает отступы для страницы с учетом зеркальных полей для тетради.
+    
+    Args:
+        page_number: Номер страницы (1, 2, 3...)
+        first_page_side: 'left' или 'right' - сторона первой страницы
+        cell_size: Размер клетки
+        grid_enabled: Включена ли сетка
+        margin_default: Дефолтный отступ
+    
+    Returns:
+        (left_margin, right_margin) - отступы слева и справа
+    """
+    # Определяем, какая страница по факту (левая или правая в тетради)
+    # Если first_page_side = 'right', то:
+    #   страница 1 = правая (больший отступ слева)
+    #   страница 2 = левая (меньший отступ слева)
+    #   страница 3 = правая
+    # Если first_page_side = 'left', то наоборот
+    
+    if first_page_side == 'right':
+        # Первая страница правая, вторая левая, третья правая...
+        is_right_page = (page_number % 2) == 1
+    else:  # first_page_side == 'left'
+        # Первая страница левая, вторая правая, третья левая...
+        is_right_page = (page_number % 2) == 0
+    
+    if grid_enabled:
+        # Для тетради с клеткой
+        if is_right_page:
+            # Правая страница: больший отступ слева (чтобы не попасть под кольца)
+            left_margin = 4 * cell_size  # 20mm
+            right_margin = 2 * cell_size  # 10mm
+        else:
+            # Левая страница: меньший отступ слева, больший справа
+            left_margin = 2 * cell_size  # 10mm
+            right_margin = 4 * cell_size  # 20mm
+    else:
+        # Без сетки: используем пропорциональные отступы
+        if is_right_page:
+            left_margin = margin_default * 1.5
+            right_margin = margin_default
+        else:
+            left_margin = margin_default
+            right_margin = margin_default * 1.5
+    
+    return left_margin, right_margin
+
+
 def generate_grid_background(c, page_size, cell_size=5*mm, margin=15*mm):
     """
     Генерирует фоновую сетку (клетку) как в тетради.
@@ -375,7 +462,7 @@ def generate_grid_background(c, page_size, cell_size=5*mm, margin=15*mm):
         c.line(grid_start_x, y, grid_end_x, y)
 
 
-def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str, output_path: str, grid_enabled: bool = False):
+def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str, output_path: str, grid_enabled: bool = False, first_page_side: str = 'right'):
     """
     Генерирует PDF с текстом используя наборы шрифтов разных типов.
 
@@ -385,6 +472,7 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
         page_format: Формат страницы ('A4' или 'A5').
         output_path: Путь для сохранения PDF файла.
         grid_enabled: Включить фоновую сетку.
+        first_page_side: 'left' или 'right' - сторона первой страницы для зеркальных отступов.
     """
     # Проверка текста
     if not text_content or not text_content.strip():
@@ -444,6 +532,27 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
     # Отступ между абзацами: 2 клетки
     paragraph_spacing = 2 * actual_cell_height
     
+    # Функция для получения отступов страницы
+    def get_current_page_margins():
+        page_num = c.getPageNumber()
+        return get_page_margins(page_num, first_page_side, cell_size, grid_enabled, margin_default)
+    
+    # Функция для получения начальной Y позиции при создании новой страницы
+    def get_initial_y():
+        if grid_enabled:
+            grid_start_y = grid_margin
+            first_text_cell_index = 2
+            # Вычисляем позицию Y от низа страницы (в ReportLab координаты снизу вверх)
+            distance_from_top = grid_start_y + (first_text_cell_index + 1) * actual_cell_height
+            return height - distance_from_top - baseline_offset
+        else:
+            return height - margin_default - baseline_offset
+    
+    # Функция для получения начальной X позиции (левый отступ) для текущей страницы
+    def get_initial_x():
+        left_margin, _ = get_current_page_margins()
+        return left_margin
+    
     # Рисуем сетку если нужно (ДО текста, чтобы она была фоном)
     if grid_enabled:
         generate_grid_background(c, page_size, cell_size, margin=grid_margin)
@@ -458,22 +567,11 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
         distance_from_top = grid_start_y + (first_text_cell_index + 1) * actual_cell_height
         y = height - distance_from_top - baseline_offset  # Y координата от низа страницы
         
-        x = 2 * cell_size  # 2 клетки слева от края листа
+        x = get_initial_x()  # Используем зеркальные отступы
     else:
         # Без сетки: начинаем с отступа сверху, но используем те же параметры текста
         y = height - margin_default - baseline_offset
-        x = 2 * cell_size
-    
-    # Функция для получения начальной Y позиции при создании новой страницы
-    def get_initial_y():
-        if grid_enabled:
-            grid_start_y = grid_margin
-            first_text_cell_index = 2
-            # Вычисляем позицию Y от низа страницы (в ReportLab координаты снизу вверх)
-            distance_from_top = grid_start_y + (first_text_cell_index + 1) * actual_cell_height
-            return height - distance_from_top - baseline_offset
-        else:
-            return height - margin_default - baseline_offset
+        x = get_initial_x()  # Используем зеркальные отступы
     
     # Обрабатываем текст: разбиваем на абзацы
     # Поддерживаем обычные переносы строк как абзацы
@@ -545,8 +643,9 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
             words = clean_line.split()
             current_line = []
             current_width = 0
-            # Доступная ширина текста с учетом левого отступа и правого поля
-            max_width = width - x - (grid_margin if grid_enabled else margin_default)
+            # Доступная ширина текста с учетом левого и правого отступов
+            _, right_margin = get_current_page_margins()
+            max_width = width - x - right_margin
             effective_max_width = max_width
             
             for word in words:
@@ -565,6 +664,10 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size, margin=grid_margin)
                             y = get_initial_y()
+                            x = get_initial_x()  # Обновляем x для новой страницы
+                            _, right_margin = get_current_page_margins()
+                            max_width = width - x - right_margin
+                            effective_max_width = max_width
                         
                         # Рисуем с форматированием
                         draw_line_with_formatting(c, current_x, y, words_line, font_size, selector)
@@ -590,6 +693,10 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                                     if grid_enabled:
                                         generate_grid_background(c, page_size, cell_size, margin=grid_margin)
                                     y = get_initial_y()
+                                    x = get_initial_x()  # Обновляем x для новой страницы
+                                    _, right_margin = get_current_page_margins()
+                                    max_width = width - x - right_margin
+                                    effective_max_width = max_width
                                 
                                 current_x = x
                                 safe_draw_string(c, current_x, y, temp_word, font_size, selector.select)
@@ -603,6 +710,10 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size, margin=grid_margin)
                             y = get_initial_y()
+                            x = get_initial_x()  # Обновляем x для новой страницы
+                            _, right_margin = get_current_page_margins()
+                            max_width = width - x - right_margin
+                            effective_max_width = max_width
                         
                         current_x = x
                         safe_draw_string(c, current_x, y, temp_word, font_size, selector.select)
@@ -624,7 +735,12 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size, margin=grid_margin)
                             y = get_initial_y()
+                            x = get_initial_x()  # Обновляем x для новой страницы
+                            _, right_margin = get_current_page_margins()
+                            max_width = width - x - right_margin
+                            effective_max_width = max_width
                         
+                        current_x = x
                         safe_draw_string(c, current_x, y, words_line, font_size, selector.select)
                         y -= line_height
                         
@@ -644,7 +760,12 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                     if grid_enabled:
                         generate_grid_background(c, page_size, cell_size, margin=grid_margin)
                     y = get_initial_y()
+                    x = get_initial_x()  # Обновляем x для новой страницы
+                    _, right_margin = get_current_page_margins()
+                    max_width = width - x - right_margin
+                    effective_max_width = max_width
                 
+                current_x = x
                 safe_draw_string(c, current_x, y, words_line, font_size, selector.select)
                 y -= line_height
                 first_line_in_paragraph = False
@@ -657,9 +778,17 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
     c.save()
 
 
-def generate_pdf_for_job(job_id: int, text_content: str, font_sets: Dict[str, list], page_format: str, grid_enabled: bool = False) -> str:
+def generate_pdf_for_job(job_id: int, text_content: str, font_sets: Dict[str, list], page_format: str, grid_enabled: bool = False, first_page_side: str = 'right') -> str:
     """
     Генерирует PDF для задачи из jobs таблицы
+    
+    Args:
+        job_id: ID задачи
+        text_content: Текст для генерации
+        font_sets: Наборы шрифтов
+        page_format: Формат страницы
+        grid_enabled: Включена ли сетка
+        first_page_side: 'left' или 'right' - сторона первой страницы
     
     Returns:
         Путь к созданному PDF файлу
@@ -681,6 +810,6 @@ def generate_pdf_for_job(job_id: int, text_content: str, font_sets: Dict[str, li
     os.makedirs(GENERATED_DIR, exist_ok=True)
     output_path = os.path.join(GENERATED_DIR, f"job_{job_id}.pdf")
     
-    generate_pdf(text_content, font_sets, page_format, output_path, grid_enabled)
+    generate_pdf(text_content, font_sets, page_format, output_path, grid_enabled, first_page_side)
     
     return output_path

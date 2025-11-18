@@ -28,20 +28,14 @@ FONT_TYPE_LABELS = {
 UPLOAD_SEQUENCE = ["cyrillic_full", "digits", "latin"]
 
 
-def get_main_menu_keyboard(grid_enabled: bool = False, ready_to_generate: bool = True):
+def get_main_menu_keyboard(ready_to_generate: bool = True):
     """Главное меню с кнопками"""
-    grid_button_text = "✅ Фон: клетка" if grid_enabled else "📐 Фон: клетка"
     pdf_button_text = "📝 Создать PDF" if ready_to_generate else "📝 Создать PDF (после загрузки шрифтов)"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=pdf_button_text, callback_data="menu_create_pdf")],
         [
-            InlineKeyboardButton(text="📥 Загрузить шрифты", callback_data="menu_upload_font"),
-            InlineKeyboardButton(text="📄 Выбрать формат", callback_data="menu_set_format")
-        ],
-        [
-            InlineKeyboardButton(text=grid_button_text, callback_data="toggle_grid")
-        ],
-        [
-            InlineKeyboardButton(text=pdf_button_text, callback_data="menu_create_pdf")
+            InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu_settings"),
+            InlineKeyboardButton(text="📥 Загрузить шрифты", callback_data="menu_upload_font")
         ]
     ])
     return keyboard
@@ -150,36 +144,23 @@ async def cmd_start(message: Message):
         progress = get_font_requirement_progress(user_id)
         ready_to_generate = has_minimum_font_set(user_id)
 
-        welcome_text = "📋 Текущие настройки:\n\n"
-
-        base_fonts = fonts_by_type.get("base", [])
-        if base_fonts:
-            welcome_text += f"👑 Базовый кириллический шрифт:\n• {base_fonts[0].split('/')[-1]}\n\n"
+        welcome_text = "👋 Главное меню\n\n"
+        
+        if ready_to_generate:
+            welcome_text += "✓ Готов к генерации PDF\n\n"
         else:
-            welcome_text += "⚠️ Базовый кириллический шрифт не выбран\n\n"
-
-        welcome_text += "📊 Прогресс загрузки шрифтов:\n"
-        for font_type in UPLOAD_SEQUENCE:
-            info = progress.get(font_type, {"current": 0, "required": 0})
-            label = FONT_TYPE_LABELS.get(font_type, font_type)
-            status_icon = "✅" if info["current"] >= info["required"] else "⬜️"
-            welcome_text += f"{status_icon} {label}: {info['current']}/{info['required']}\n"
-        welcome_text += "\n"
+            welcome_text += "⚠️ Загрузите шрифты для генерации PDF\n\n"
         
         format_name = PAGE_FORMATS.get(user['page_format'], user['page_format'] or 'A4')
         grid_enabled = user_info.get('grid_enabled', False) if user_info else False
         grid_status = "Включен" if grid_enabled else "Выключен"
         
-        welcome_text += f"\nНастройки:\n"
+        welcome_text += "Настройки:\n"
         welcome_text += f"✓ Формат: {format_name}\n"
-        welcome_text += f"✓ Фон клетка: {grid_status}\n\n"
-        
-        if not ready_to_generate:
-            welcome_text += "⚠️ Загрузите шрифты по шагам, прежде чем создавать PDF.\n\n"
-        welcome_text += "Выберите действие:"
+        welcome_text += f"✓ Фон клетка: {grid_status}\n"
         
         # Отправляем главное меню в фоне, чтобы обработчик не блокировался
-        keyboard = get_main_menu_keyboard(grid_enabled, ready_to_generate)
+        keyboard = get_main_menu_keyboard(ready_to_generate)
         
         async def send_start():
             try:
@@ -223,38 +204,25 @@ async def menu_main(callback: CallbackQuery):
     progress = get_font_requirement_progress(user_id)
     ready_to_generate = has_minimum_font_set(user_id)
 
-    welcome_text = "📋 Текущие настройки:\n\n"
-
-    base_fonts = fonts_by_type.get("base", [])
-    if base_fonts:
-        welcome_text += f"👑 Базовый кириллический шрифт:\n• {base_fonts[0].split('/')[-1]}\n\n"
+    welcome_text = "👋 Главное меню\n\n"
+    
+    if ready_to_generate:
+        welcome_text += "✓ Готов к генерации PDF\n\n"
     else:
-        welcome_text += "⚠️ Базовый кириллический шрифт не выбран\n\n"
-
-    welcome_text += "📊 Прогресс загрузки шрифтов:\n"
-    for font_type in UPLOAD_SEQUENCE:
-        info = progress.get(font_type, {"current": 0, "required": 0})
-        label = FONT_TYPE_LABELS.get(font_type, font_type)
-        status_icon = "✅" if info["current"] >= info["required"] else "⬜️"
-        welcome_text += f"{status_icon} {label}: {info['current']}/{info['required']}\n"
-    welcome_text += "\n"
+        welcome_text += "⚠️ Загрузите шрифты для генерации PDF\n\n"
     
     format_name = PAGE_FORMATS.get(user['page_format'], user['page_format'] or 'A4')
     grid_enabled = user_info.get('grid_enabled', False) if user_info else False
     grid_status = "Включен" if grid_enabled else "Выключен"
     
-    welcome_text += f"\nНастройки:\n"
+    welcome_text += "Настройки:\n"
     welcome_text += f"✓ Формат: {format_name}\n"
-    welcome_text += f"✓ Фон клетка: {grid_status}\n\n"
-    
-    if not ready_to_generate:
-        welcome_text += "⚠️ Загрузите шрифты по шагам, прежде чем создавать PDF.\n\n"
-    welcome_text += "Выберите действие:"
+    welcome_text += f"✓ Фон клетка: {grid_status}\n"
     
     await call_with_retries(
         callback.message.edit_text,
         welcome_text,
-        reply_markup=get_main_menu_keyboard(grid_enabled, ready_to_generate),
+        reply_markup=get_main_menu_keyboard(ready_to_generate),
     )
     await call_with_retries(callback.answer)
 
@@ -262,33 +230,30 @@ async def menu_main(callback: CallbackQuery):
 @router.callback_query(F.data == "menu_upload_font")
 async def menu_upload_font(callback: CallbackQuery):
     """Меню загрузки шрифта"""
-    user = get_user_info(callback.from_user.id)
+    user_id = callback.from_user.id
+    progress = get_font_requirement_progress(user_id)
+    ready = has_minimum_font_set(user_id)
     
-    progress = get_font_requirement_progress(callback.from_user.id)
-    fonts_by_type = get_user_fonts_by_type(callback.from_user.id)
-
-    text = "📥 Инструкция по загрузке шрифтов\n\n"
-    text += "Следуйте шагам:\n"
+    text = "📥 Загрузка шрифтов\n\n"
+    
+    # Детальный прогресс по типам
     for font_type in UPLOAD_SEQUENCE:
         info = progress.get(font_type, {"current": 0, "required": 0})
         label = FONT_TYPE_LABELS.get(font_type, font_type)
-        status_icon = "✅" if info["current"] >= info["required"] else "⬜️"
+        status_icon = "✓" if info["current"] >= info["required"] else "⬜"
         text += f"{status_icon} {label}: {info['current']}/{info['required']}\n"
+    
     text += "\n"
-
-    base_fonts = fonts_by_type.get("base", [])
-    if base_fonts:
-        text += f"👑 Базовый шрифт: {base_fonts[0].split('/')[-1]}\n\n"
+    
+    if ready:
+        text += "✓ Готов к генерации\n\n"
     else:
-        text += "⚠️ Базовый кириллический шрифт ещё не выбран.\n\n"
-
+        text += "⚠️ Загрузите хотя бы один кириллический шрифт\n\n"
+    
     text += (
-        "🔁 Порядок загрузки:\n"
-        "1) Три кириллических шрифта (строчные и заглавные).\n"
-        "2) Два шрифта с цифрами и спецсимволами.\n"
-        "3) Два шрифта с латиницей.\n\n"
-        "📤 Отправляйте .ttf или .otf файлы по одному. "
-        "Бот автоматически распознает тип каждого шрифта.\n"
+        "Отправляйте .ttf или .otf файлы в любом порядке.\n"
+        "Бот автоматически распознает тип каждого шрифта.\n\n"
+        "Можно начать с одного кириллического шрифта, но для вариативности и лучшего качества нужны все."
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -319,43 +284,99 @@ async def menu_set_format(callback: CallbackQuery):
 
 @router.callback_query(F.data == "menu_create_pdf")
 async def menu_create_pdf(callback: CallbackQuery):
-    """Меню создания PDF"""
+    """Меню создания PDF - проверка готовности"""
     user_id = callback.from_user.id
     user = get_user_info(user_id)
     
-    text = "📝 Создание PDF\n\n"
-
     ready_fonts = has_minimum_font_set(user_id)
     format_selected = bool(user and user.get('page_format'))
-    if ready_fonts:
-        text += "✅ Шрифты загружены\n"
-    else:
-        progress = get_font_requirement_progress(user_id)
-        progress_lines = []
-        for font_type in UPLOAD_SEQUENCE:
-            info = progress.get(font_type, {"current": 0, "required": 0})
-            label = FONT_TYPE_LABELS.get(font_type, font_type)
-            status_icon = "✅" if info["current"] >= info["required"] else "⬜️"
-            progress_lines.append(f"{status_icon} {label}: {info['current']}/{info['required']}")
-        text += "⚠️ Не хватает обязательных шрифтов.\n\n" + "\n".join(progress_lines) + "\n\n"
     
-    if format_selected:
-        format_name = PAGE_FORMATS.get(user['page_format'], user['page_format'])
-        text += f"✅ Формат: {format_name}\n"
-    else:
-        text += "⚠️ Формат страницы не выбран\n"
+    if not ready_fonts or not format_selected:
+        # Не готово - показываем что не хватает
+        text = "📝 Создание PDF\n\n"
+        
+        if not ready_fonts:
+            text += "⚠️ Загрузите хотя бы один кириллический шрифт\n"
+        else:
+            text += "✓ Шрифты готовы\n"
+        
+        if not format_selected:
+            text += "⚠️ Формат страницы не выбран\n"
+        else:
+            format_name = PAGE_FORMATS.get(user['page_format'], user['page_format'])
+            text += f"✓ Формат: {format_name}\n"
+        
+        text += "\nИспользуйте меню настроек, чтобы исправить это."
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu_settings")],
+            [InlineKeyboardButton(text="◀️ Главное меню", callback_data="menu_main")]
+        ])
+        
+        await call_with_retries(callback.message.edit_text, text, reply_markup=keyboard)
+        await call_with_retries(callback.answer)
+        return
     
-    if ready_fonts and format_selected:
-        text += "\n✅ Все готово!\n\nОтправьте текст для генерации PDF:"
-    else:
-        text += "\nИспользуйте меню, чтобы загрузить недостающие шрифты и выбрать формат."
+    # Все готово - переходим к выбору стороны страницы
+    await menu_choose_page_side(callback)
+
+
+@router.callback_query(F.data == "menu_choose_page_side")
+async def menu_choose_page_side(callback: CallbackQuery):
+    """Меню выбора стороны первой страницы"""
+    user_id = callback.from_user.id
+    user_info = get_user_info(user_id)
+    current_side = user_info.get('first_page_side', 'right') if user_info else 'right'
+    
+    side_label = "Правая страница ➡️" if current_side == 'right' else "⬅️ Левая страница"
+    
+    text = "📄 Выберите сторону первой страницы\n\n"
+    text += "Это определит отступы для печати в тетрадь:\n"
+    text += "• Левая страница — меньший отступ слева\n"
+    text += "• Правая страница — больший отступ слева (для колец)\n\n"
+    text += f"Текущий выбор: {side_label}"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Левая страница", callback_data="first_page_left")],
+        [InlineKeyboardButton(text="Правая страница ➡️", callback_data="first_page_right")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
     ])
     
     await call_with_retries(callback.message.edit_text, text, reply_markup=keyboard)
     await call_with_retries(callback.answer)
+
+
+@router.callback_query(F.data.in_(["first_page_left", "first_page_right"]))
+async def set_first_page_side(callback: CallbackQuery):
+    """Обработчик выбора стороны первой страницы"""
+    from utils.db_utils import update_user_first_page_side, get_or_create_user
+    
+    user_id = callback.from_user.id
+    telegram_user = callback.from_user
+    get_or_create_user(
+        user_id,
+        username=getattr(telegram_user, "username", None),
+        first_name=getattr(telegram_user, "first_name", None),
+        last_name=getattr(telegram_user, "last_name", None),
+    )
+    
+    side = 'left' if callback.data == "first_page_left" else 'right'
+    
+    if update_user_first_page_side(user_id, side):
+        side_label = "Правая страница ➡️" if side == 'right' else "⬅️ Левая страница"
+        await call_with_retries(callback.answer, f"✓ Выбрано: {side_label}")
+        
+        # Переходим к вводу текста
+        text = "📝 Отправьте текст для генерации PDF\n\n"
+        text += f"(Выбрана: {side_label})"
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_choose_page_side")]
+        ])
+        
+        await call_with_retries(callback.message.edit_text, text, reply_markup=keyboard)
+    else:
+        await call_with_retries(callback.answer, "❌ Ошибка при сохранении настройки", show_alert=True)
     
 
 

@@ -66,7 +66,7 @@ async def process_format_callback(callback: CallbackQuery):
                 f"✓ Фон клетка: {'✓ Включен' if grid_enabled else '✗ Выключен'}\n\n"
                 "Выберите действие:"
             )
-            await callback.message.answer(welcome_text, reply_markup=get_main_menu_keyboard(grid_enabled))
+            await callback.message.answer(welcome_text, reply_markup=get_main_menu_keyboard())
         except Exception:
             # Любая другая ошибка
             await callback.answer("⚠ Не удалось обновить экран. Откройте главное меню.")
@@ -135,7 +135,7 @@ async def retry_pdf_delivery(callback: CallbackQuery):
             await call_with_retries(
                 callback.message.answer,
                 "💡 Отправьте новый текст:\nя создам еще один конспект",
-                reply_markup=get_main_menu_keyboard(grid_enabled),
+                reply_markup=get_main_menu_keyboard(),
             )
             
         finally:
