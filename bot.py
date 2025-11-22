@@ -107,6 +107,12 @@ async def main():
     )
     dp = Dispatcher()
     
+    # Регистрируем middleware для обновления last_seen_at
+    from utils.last_seen_middleware import LastSeenMiddleware
+    dp.message.middleware(LastSeenMiddleware())
+    dp.callback_query.middleware(LastSeenMiddleware())
+    dp.edited_message.middleware(LastSeenMiddleware())
+    
     # Регистрируем роутеры (важен порядок!)
     # grid.router должен быть до menu.router, чтобы обрабатывать toggle_grid callback
     dp.include_router(grid.router)

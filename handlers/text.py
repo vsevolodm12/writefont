@@ -202,6 +202,7 @@ async def handle_text_message(message: Message):
             first_name=getattr(telegram_user, "first_name", None),
             last_name=getattr(telegram_user, "last_name", None),
         )
+    # last_seen_at обновляется автоматически через middleware
     
     ready_font_set = has_minimum_font_set(user_id)
     if not ready_font_set:

@@ -710,6 +710,44 @@ def update_user_first_page_side(user_id: int, first_page_side: str):
             return_db_connection(conn)
 
 
+def update_last_seen_at(user_id: int):
+    """Обновляет время последнего визита пользователя."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Проверяем существует ли колонка last_seen_at
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name='last_seen_at'
+        """)
+        
+        if cursor.fetchone():
+            # Колонка существует, обновляем
+            cursor.execute(
+                """
+                UPDATE users 
+                SET last_seen_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+                """,
+                (user_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        else:
+            # Колонка не существует, ничего не делаем
+            return False
+    except Exception as e:
+        # В случае ошибки просто игнорируем (не критично)
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
+
+
 def _ensure_recent_fonts_table(cursor):
     """Гарантирует наличие таблицы для хранения последних шрифтов."""
     cursor.execute("""
