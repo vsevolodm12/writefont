@@ -4,7 +4,7 @@ Middleware для обновления времени последнего ви�
 
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, Update
+from aiogram.types import TelegramObject, Message, CallbackQuery, EditedMessage
 from utils.db_utils import update_last_seen_at
 
 
@@ -14,18 +14,18 @@ class LastSeenMiddleware(BaseMiddleware):
     async def __call__(
         self,
         handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-        event: Update,
+        event: TelegramObject,
         data: Dict[str, Any]
     ) -> Any:
         # Получаем user_id из события
         user_id = None
         
-        if event.message:
-            user_id = event.message.from_user.id if event.message.from_user else None
-        elif event.callback_query:
-            user_id = event.callback_query.from_user.id if event.callback_query.from_user else None
-        elif event.edited_message:
-            user_id = event.edited_message.from_user.id if event.edited_message.from_user else None
+        if isinstance(event, Message):
+            user_id = event.from_user.id if event.from_user else None
+        elif isinstance(event, CallbackQuery):
+            user_id = event.from_user.id if event.from_user else None
+        elif isinstance(event, EditedMessage):
+            user_id = event.from_user.id if event.from_user else None
         
         # Обновляем last_seen_at если user_id найден
         if user_id:
@@ -37,4 +37,5 @@ class LastSeenMiddleware(BaseMiddleware):
         
         # Продолжаем обработку
         return await handler(event, data)
+
 
