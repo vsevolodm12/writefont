@@ -467,6 +467,23 @@ def generate_grid_background(c, page_size, cell_size=5*mm, margin=15*mm):
         c.line(grid_start_x, y, grid_end_x, y)
 
 
+def _is_list_item(text: str) -> bool:
+    """
+    Проверяет, является ли текст элементом списка (начинается с bullet point).
+    
+    Args:
+        text: Текст для проверки
+        
+    Returns:
+        True если текст начинается с bullet point (•), False иначе
+    """
+    if not text:
+        return False
+    stripped = text.strip()
+    # Проверяем различные варианты bullet points
+    return stripped.startswith('•') or stripped.startswith('*') or stripped.startswith('-') or stripped.startswith('—')
+
+
 def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str, output_path: str, grid_enabled: bool = False, first_page_side: str = 'right'):
     """
     Генерирует PDF с текстом используя наборы шрифтов разных типов.
@@ -517,6 +534,7 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
     # Настройки страницы
     width, height = page_size
     margin_default = 15 * mm
+    bottom_margin = 8 * mm  # Уменьшенный нижний отступ для использования большего пространства
     cell_size = 5 * mm  # Базовый размер клетки сетки
     grid_margin = 0 if grid_enabled else margin_default
     
@@ -599,13 +617,23 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
     paragraphs = re.split(r'\n\s*\n|\n(?=\S)', text_content)
     
     first_line_in_paragraph = True
+    prev_was_list_item = False  # Отслеживаем, был ли предыдущий абзац элементом списка
     
-    for paragraph in paragraphs:
+    for i, paragraph in enumerate(paragraphs):
         if not paragraph.strip():
             y -= paragraph_spacing
+            prev_was_list_item = False
             continue
         
         paragraph_text = paragraph.strip()
+        is_list_item = _is_list_item(paragraph_text)
+        
+        # Определяем, является ли следующий абзац элементом списка
+        next_is_list_item = False
+        if i + 1 < len(paragraphs):
+            next_paragraph = paragraphs[i + 1].strip()
+            if next_paragraph:
+                next_is_list_item = _is_list_item(next_paragraph)
         
         # Парсим форматирование (жирный, курсив, подчеркнутый)
         # Используем Markdown синтаксис: **жирный**, *курсив*, ~~подчеркнутый~~
@@ -680,7 +708,7 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                         words_line = ' '.join(current_line)
                         
                         # Проверяем, достаточно ли места для строки ПЕРЕД рисованием
-                        if y < margin_default + line_height:
+                        if y < bottom_margin + line_height:
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size, margin=grid_margin)
@@ -709,7 +737,7 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                             temp_word += char
                         else:
                             if temp_word:
-                                if y < margin_default + line_height:
+                                if y < bottom_margin + line_height:
                                     c.showPage()
                                     if grid_enabled:
                                         generate_grid_background(c, page_size, cell_size, margin=grid_margin)
@@ -726,7 +754,7 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                                 effective_max_width = max_width
                             temp_word = char
                     if temp_word:
-                        if y < margin_default + line_height:
+                        if y < bottom_margin + line_height:
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size, margin=grid_margin)
@@ -751,7 +779,7 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                         current_x = x
                         words_line = ' '.join(current_line)
                         
-                        if y < margin_default + line_height:
+                        if y < bottom_margin + line_height:
                             c.showPage()
                             if grid_enabled:
                                 generate_grid_background(c, page_size, cell_size, margin=grid_margin)
@@ -792,8 +820,16 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                 first_line_in_paragraph = False
         
         # Отступ между абзацами
-        y -= paragraph_spacing
+        # Если текущий и следующий абзацы - элементы списка, используем меньший интервал
+        if is_list_item and next_is_list_item:
+            # Для элементов списка используем только line_height (один интервал)
+            y -= line_height
+        else:
+            # Для обычных абзацев используем полный paragraph_spacing
+            y -= paragraph_spacing
+        
         first_line_in_paragraph = True
+        prev_was_list_item = is_list_item
     
     # Сохраняем PDF
     c.save()
