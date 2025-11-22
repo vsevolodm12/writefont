@@ -573,13 +573,14 @@ def get_user_info(user_id: int):
         cursor.execute("""
             SELECT column_name 
             FROM information_schema.columns 
-            WHERE table_name='users' AND column_name IN ('grid_enabled', 'variant_fonts', 'first_page_side')
+            WHERE table_name='users' AND column_name IN ('grid_enabled', 'variant_fonts', 'first_page_side', 'instruction_seen')
         """)
         existing_columns = {row[0] for row in cursor.fetchall()}
         
         has_grid = 'grid_enabled' in existing_columns
         has_variants = 'variant_fonts' in existing_columns
         has_first_page_side = 'first_page_side' in existing_columns
+        has_instruction_seen = 'instruction_seen' in existing_columns
         
         # Формируем запрос в зависимости от наличия колонок
         select_fields = ["user_id", "font_path", "page_format"]
@@ -598,6 +599,11 @@ def get_user_info(user_id: int):
         else:
             select_fields.append("'right'")
         
+        if has_instruction_seen:
+            select_fields.append("COALESCE(instruction_seen, FALSE)")
+        else:
+            select_fields.append("FALSE")
+        
         query = f"SELECT {', '.join(select_fields)} FROM users WHERE user_id = %s"
         cursor.execute(query, (user_id,))
         user = cursor.fetchone()
@@ -615,13 +621,17 @@ def get_user_info(user_id: int):
             first_page_side_idx = 5 if has_first_page_side else None
             first_page_side = user[first_page_side_idx] if first_page_side_idx is not None and len(user) > first_page_side_idx else 'right'
             
+            instruction_seen_idx = 6 if has_instruction_seen else None
+            instruction_seen = user[instruction_seen_idx] if instruction_seen_idx is not None and len(user) > instruction_seen_idx else False
+            
             return {
                 'user_id': user[0],
                 'font_path': user[1],
                 'page_format': user[2],
                 'grid_enabled': user[3] if len(user) > 3 else False,
                 'variant_fonts': variant_fonts if isinstance(variant_fonts, list) else [],
-                'first_page_side': first_page_side
+                'first_page_side': first_page_side,
+                'instruction_seen': instruction_seen
             }
         return None
     finally:
@@ -740,6 +750,126 @@ def update_last_seen_at(user_id: int):
             return False
     except Exception as e:
         # В случае ошибки просто игнорируем (не критично)
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
+
+
+def mark_instruction_seen(user_id: int):
+    """Отмечает, что пользователь видел инструкцию"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Проверяем существует ли колонка instruction_seen
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name='instruction_seen'
+        """)
+        
+        if not cursor.fetchone():
+            # Добавляем колонку если не существует
+            cursor.execute("""
+                ALTER TABLE users 
+                ADD COLUMN instruction_seen BOOLEAN DEFAULT FALSE
+            """)
+            conn.commit()
+        
+        # Обновляем флаг
+        cursor.execute(
+            """
+            UPDATE users 
+            SET instruction_seen = TRUE, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s
+            """,
+            (user_id,)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        # В случае ошибки просто игнорируем (не критично)
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
+
+
+def set_user_pdf_mode(user_id: int, enabled: bool):
+    """Устанавливает режим создания PDF для пользователя"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Проверяем существует ли колонка pdf_mode_enabled
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name='pdf_mode_enabled'
+        """)
+        
+        if not cursor.fetchone():
+            # Добавляем колонку если не существует
+            cursor.execute("""
+                ALTER TABLE users 
+                ADD COLUMN pdf_mode_enabled BOOLEAN DEFAULT FALSE
+            """)
+            conn.commit()
+        
+        # Обновляем флаг
+        cursor.execute(
+            """
+            UPDATE users 
+            SET pdf_mode_enabled = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s
+            """,
+            (enabled, user_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        # В случае ошибки просто игнорируем (не критично)
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
+
+
+def is_user_in_pdf_mode(user_id: int) -> bool:
+    """Проверяет, находится ли пользователь в режиме создания PDF"""
+    user_info = get_user_info(user_id)
+    if not user_info:
+        return False
+    
+    # Проверяем наличие колонки в БД
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name='pdf_mode_enabled'
+        """)
+        
+        if cursor.fetchone():
+            # Колонка существует, получаем значение
+            cursor.execute(
+                "SELECT pdf_mode_enabled FROM users WHERE user_id = %s",
+                (user_id,)
+            )
+            result = cursor.fetchone()
+            return result[0] if result and result[0] else False
+        else:
+            return False
+    except Exception:
         return False
     finally:
         if cursor:

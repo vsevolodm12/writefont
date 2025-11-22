@@ -33,6 +33,7 @@ WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')      # путь, по ко�
 FONTS_DIR = 'fonts'
 JOBS_DIR = 'jobs'
 GENERATED_DIR = 'generated'
+TEMPLATES_DIR = 'templates'
 
 # Page Formats
 PAGE_FORMATS = {

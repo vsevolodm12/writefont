@@ -171,6 +171,18 @@ async def handle_text_message(message: Message):
     user_id = message.from_user.id
     text_content = message.text.strip()
     
+    # Проверяем, находится ли пользователь в режиме создания PDF
+    from utils.db_utils import is_user_in_pdf_mode, set_user_pdf_mode
+    if not is_user_in_pdf_mode(user_id):
+        # Пользователь не в режиме создания PDF - показываем подсказку
+        from handlers.menu import get_main_menu_keyboard
+        await call_with_retries(
+            message.answer,
+            "Чтобы создать PDF, нажмите кнопку «Создать PDF» в главном меню.",
+            reply_markup=get_main_menu_keyboard(),
+        )
+        return
+    
     # Проверка rate limit
     allowed, error_msg = check_rate_limit(user_id)
     if not allowed:
@@ -207,6 +219,8 @@ async def handle_text_message(message: Message):
     ready_font_set = has_minimum_font_set(user_id)
     if not ready_font_set:
         from handlers.menu import get_main_menu_keyboard
+        # Выключаем режим создания PDF
+        set_user_pdf_mode(user_id, False)
         await call_with_retries(
             message.answer,
             "⚠️ Загрузите хотя бы один кириллический шрифт для генерации PDF.\n\n"
@@ -308,8 +322,12 @@ async def handle_text_message(message: Message):
         
         # Отправляем PDF пользователю
         if os.path.exists(pdf_path):
+            # Выключаем режим создания PDF после успешной генерации
+            set_user_pdf_mode(user_id, False)
             asyncio.create_task(_deliver_pdf(message, pdf_path, execution_time_ms, grid_enabled, job_id))
         else:
+            # Выключаем режим создания PDF при ошибке
+            set_user_pdf_mode(user_id, False)
             from handlers.menu import get_main_menu_keyboard
             await call_with_retries(
                 message.answer,
@@ -319,6 +337,8 @@ async def handle_text_message(message: Message):
             update_job_status_failed(job_id)
         
     except Exception as e:
+        # Выключаем режим создания PDF при ошибке
+        set_user_pdf_mode(user_id, False)
         # Записываем ошибку в метрики
         error_type = type(e).__name__
         metrics.record_error(error_type)

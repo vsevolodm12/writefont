@@ -36,6 +36,10 @@ def get_main_menu_keyboard(ready_to_generate: bool = True):
         [
             InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu_settings"),
             InlineKeyboardButton(text="📥 Загрузить шрифты", callback_data="menu_upload_font")
+        ],
+        [
+            InlineKeyboardButton(text="📚 Инструкция", callback_data="menu_instruction"),
+            InlineKeyboardButton(text="📝 Промт для GPT", callback_data="menu_ai_prompt")
         ]
     ])
     return keyboard
@@ -317,8 +321,20 @@ async def menu_create_pdf(callback: CallbackQuery):
         await call_with_retries(callback.answer)
         return
     
-    # Все готово - переходим к выбору стороны страницы
-    await menu_choose_page_side(callback)
+    # Все готово - запрашиваем текст для генерации
+    text = "Создание PDF\n\nОтправьте текст для генерации конспекта."
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Главное меню", callback_data="menu_main")]
+    ])
+    
+    await call_with_retries(callback.message.edit_text, text, reply_markup=keyboard)
+    await call_with_retries(callback.answer)
+    
+    # Устанавливаем флаг, что пользователь в режиме создания PDF
+    # Это будет использоваться в handle_text_message
+    from utils.db_utils import set_user_pdf_mode
+    set_user_pdf_mode(user_id, True)
 
 
 @router.callback_query(F.data == "menu_choose_page_side")
@@ -390,5 +406,34 @@ async def reset_fonts_handler(callback: CallbackQuery):
         await menu_upload_font(callback)
     else:
         await call_with_retries(callback.answer, "❌ Ошибка при сбросе шрифтов", show_alert=True)
+
+
+@router.callback_query(F.data == "menu_ai_prompt")
+async def menu_ai_prompt(callback: CallbackQuery):
+    """Меню с промтом для GPT"""
+    prompt_text = """Промт для GPT
+
+Скопируйте и используйте этот промт в ChatGPT:
+
+---
+Создай конспект по теме: [ВАША ТЕМА]
+
+Требования:
+1. Используй только кириллицу, латиницу, цифры и стандартные знаки препинания
+2. НЕ используй эмодзи, специальные символы, греческие буквы
+3. Структурируй с помощью маркеров списка (•) и абзацев
+4. Используй **жирный текст** для заголовков
+
+Создай конспект:
+---
+
+Скопируйте полученный конспект и отправьте в бота через кнопку "Создать PDF"."""
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Главное меню", callback_data="menu_main")]
+    ])
+    
+    await call_with_retries(callback.message.edit_text, prompt_text, reply_markup=keyboard)
+    await call_with_retries(callback.answer)
 
 
