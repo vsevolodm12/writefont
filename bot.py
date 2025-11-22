@@ -111,7 +111,7 @@ async def main():
     from utils.last_seen_middleware import LastSeenMiddleware
     dp.message.middleware(LastSeenMiddleware())
     dp.callback_query.middleware(LastSeenMiddleware())
-    dp.edited_message.middleware(LastSeenMiddleware())
+    # edited_message обрабатывается через message.middleware
     
     # Регистрируем роутеры (важен порядок!)
     # grid.router должен быть до menu.router, чтобы обрабатывать toggle_grid callback

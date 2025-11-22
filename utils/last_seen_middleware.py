@@ -4,7 +4,7 @@ Middleware для обновления времени последнего ви�
 
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, Message, CallbackQuery, EditedMessage
+from aiogram.types import TelegramObject, Message, CallbackQuery
 from utils.db_utils import update_last_seen_at
 
 
@@ -23,8 +23,6 @@ class LastSeenMiddleware(BaseMiddleware):
         if isinstance(event, Message):
             user_id = event.from_user.id if event.from_user else None
         elif isinstance(event, CallbackQuery):
-            user_id = event.from_user.id if event.from_user else None
-        elif isinstance(event, EditedMessage):
             user_id = event.from_user.id if event.from_user else None
         
         # Обновляем last_seen_at если user_id найден
