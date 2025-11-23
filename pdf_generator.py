@@ -330,14 +330,17 @@ def draw_line_with_formatting(c, x, y, line_text, font_size, selector):
         c.line(x + start_width, line_y, x + start_width + underline_width, line_y)
 
 
-def get_actual_cell_height(page_size, cell_size=5*mm, margin=15*mm):
+def get_actual_cell_height(page_size, cell_size=5*mm, top_margin=15*mm, bottom_margin=None):
     """
     Вычисляет реальную высоту клетки для выравнивания текста
     """
     from reportlab.lib.units import mm
     
     width, height = page_size
-    work_height = height - 2 * margin
+    # Если bottom_margin не указан, используем top_margin для симметрии
+    if bottom_margin is None:
+        bottom_margin = top_margin
+    work_height = height - top_margin - bottom_margin
     num_horizontal_cells = int(work_height / cell_size)
     return work_height / float(num_horizontal_cells) if num_horizontal_cells > 0 else cell_size
 
@@ -534,12 +537,14 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
     # Настройки страницы
     width, height = page_size
     margin_default = 15 * mm
-    bottom_margin = 8 * mm  # Уменьшенный нижний отступ для использования большего пространства
+    bottom_margin = 4 * mm  # Уменьшенный нижний отступ для использования большего пространства
     cell_size = 5 * mm  # Базовый размер клетки сетки
     grid_margin = 0 if grid_enabled else margin_default
     
     # Вычисляем реальную высоту клетки (для всех режимов для единообразия)
-    actual_cell_height = get_actual_cell_height(page_size, cell_size, margin=grid_margin if grid_enabled else margin_default)
+    # Передаем разные отступы сверху и снизу
+    top_margin_for_calc = grid_margin if grid_enabled else margin_default
+    actual_cell_height = get_actual_cell_height(page_size, cell_size, top_margin=top_margin_for_calc, bottom_margin=bottom_margin)
     
     # Единые параметры текста для всех режимов (A4, A5, с клеткой и без)
     # Размер шрифта увеличен в 2 раза
@@ -621,7 +626,9 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
     
     for i, paragraph in enumerate(paragraphs):
         if not paragraph.strip():
-            y -= paragraph_spacing
+            # Проверяем, не выходим ли мы за границы страницы перед добавлением отступа
+            if y >= bottom_margin:
+                y -= paragraph_spacing
             prev_was_list_item = False
             continue
         
@@ -708,6 +715,7 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                         words_line = ' '.join(current_line)
                         
                         # Проверяем, достаточно ли места для строки ПЕРЕД рисованием
+                        # Проверяем y < bottom_margin + line_height, чтобы строка полностью поместилась
                         if y < bottom_margin + line_height:
                             c.showPage()
                             if grid_enabled:
@@ -804,7 +812,7 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
                 current_x = x
                 words_line = ' '.join(current_line)
                 
-                if y < margin_default + line_height:
+                if y < bottom_margin + line_height:
                     c.showPage()
                     if grid_enabled:
                         generate_grid_background(c, page_size, cell_size, margin=grid_margin)
@@ -823,10 +831,14 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
         # Если текущий и следующий абзацы - элементы списка, используем меньший интервал
         if is_list_item and next_is_list_item:
             # Для элементов списка используем только line_height (один интервал)
-            y -= line_height
+            # Проверяем, не выходим ли мы за границы страницы
+            if y >= bottom_margin:
+                y -= line_height
         else:
             # Для обычных абзацев используем полный paragraph_spacing
-            y -= paragraph_spacing
+            # Проверяем, не выходим ли мы за границы страницы
+            if y >= bottom_margin:
+                y -= paragraph_spacing
         
         first_line_in_paragraph = True
         prev_was_list_item = is_list_item
