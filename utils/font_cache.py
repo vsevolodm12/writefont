@@ -26,8 +26,8 @@ def get_cached_font_name(font_path: str) -> str:
         return _font_cache[font_path]
     
     # Генерируем имя шрифта из имени файла
-    font_name = os.path.basename(font_path).replace('.ttf', '').replace('.otf', '')
-    font_name = font_name.replace('.TTF', '').replace('.OTF', '')
+    font_name = os.path.basename(font_path).replace('.ttf', '')
+    font_name = font_name.replace('.TTF', '')
     font_name = re.sub(r'[^a-zA-Z0-9_]', '_', font_name)
     
     # Регистрируем шрифт

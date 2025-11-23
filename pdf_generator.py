@@ -205,9 +205,9 @@ def register_font(font_path: str):
         raise ValueError(f"Указанный путь не является файлом: {font_path}")
     
     # Проверка расширения файла
-    valid_extensions = ['.ttf', '.otf', '.TTF', '.OTF']
+    valid_extensions = ['.ttf', '.TTF']
     if not any(font_path.endswith(ext) for ext in valid_extensions):
-        raise ValueError(f"Неподдерживаемый формат шрифта. Используйте .ttf или .otf")
+        raise ValueError(f"Неподдерживаемый формат шрифта. Используйте .ttf")
     
     # Используем кэшированный шрифт
     try:

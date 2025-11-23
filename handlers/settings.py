@@ -40,17 +40,17 @@ async def menu_settings(callback: CallbackQuery):
     
     # Формат
     format_name = PAGE_FORMATS.get(user['page_format'], user['page_format'] or 'A4')
-    text += f"📄 Формат: {format_name}\n"
+    text += f"<b>Формат:</b> {format_name}\n"
     
     # Сетка
     grid_enabled = user_info.get('grid_enabled', False) if user_info else False
     grid_status = "✓ Включен" if grid_enabled else "✗ Выключен"
-    text += f"📐 Фон клетка: {grid_status}\n"
+    text += f"<b>Фон клетка:</b> {grid_status}\n"
     
     # Первая страница
     first_page_side = user_info.get('first_page_side', 'right') if user_info else 'right'
     side_label = "Правая ➡️" if first_page_side == 'right' else "⬅️ Левая"
-    text += f"📑 Первая страница: {side_label}\n\n"
+    text += f"<b>Первая страница:</b> {side_label}\n\n"
     
     # Прогресс шрифтов
     text += "📊 Прогресс шрифтов:\n"
@@ -69,7 +69,7 @@ async def menu_settings(callback: CallbackQuery):
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
     ])
     
-    await call_with_retries(callback.message.edit_text, text, reply_markup=keyboard)
+    await call_with_retries(callback.message.edit_text, text, reply_markup=keyboard, parse_mode="HTML")
     await call_with_retries(callback.answer)
 
 
@@ -94,7 +94,7 @@ async def settings_first_page_side(callback: CallbackQuery):
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
     ])
     
-    await call_with_retries(callback.message.edit_text, text, reply_markup=keyboard)
+    await call_with_retries(callback.message.edit_text, text, reply_markup=keyboard, parse_mode="HTML")
     await call_with_retries(callback.answer)
 
 

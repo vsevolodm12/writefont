@@ -117,12 +117,6 @@ async def handle_ttf_font(message: Message):
     await handle_font_file(message, '.ttf')
 
 
-@router.message(F.document & (F.document.file_name.endswith('.otf') | F.document.file_name.endswith('.OTF')))
-async def handle_otf_font(message: Message):
-    """Обработчик загрузки OTF-шрифта"""
-    await handle_font_file(message, '.otf')
-
-
 @router.message(F.document)
 async def handle_wrong_file_type(message: Message):
     """Обработчик неподходящего типа файла"""
@@ -132,7 +126,7 @@ async def handle_wrong_file_type(message: Message):
     await call_with_retries(
         message.answer,
         f"❌ Неподходящий тип файла: {file_name}\n\n"
-        f"Пожалуйста, отправьте файл с расширением .ttf или .otf\n\n"
+        f"Пожалуйста, отправьте файл с расширением .ttf\n\n"
         f"Используйте команду /upload_font для загрузки шрифта."
     )
 
