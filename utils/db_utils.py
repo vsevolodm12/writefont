@@ -499,15 +499,35 @@ def get_or_create_user(
         
         user = cursor.fetchone()
         
-        # Проверяем, является ли пользователь новым (нет шрифтов) ДО commit
+        # Проверяем, является ли пользователь действительно новым (только что создан)
+        # Проверяем created_at - если пользователь создан менее 5 секунд назад, это новый пользователь
+        cursor.execute(
+            """
+            SELECT created_at, 
+                   (CURRENT_TIMESTAMP - created_at) < INTERVAL '5 seconds' as is_recently_created
+            FROM users 
+            WHERE user_id = %s
+            """,
+            (user_id,)
+        )
+        user_created_info = cursor.fetchone()
+        
+        # Проверяем количество шрифтов
         _ensure_fonts_table(cursor)
         cursor.execute("SELECT COUNT(*) FROM fonts WHERE user_id = %s", (user_id,))
         font_count = cursor.fetchone()[0]
-        is_new_user = font_count == 0
+        
+        # Пользователь считается новым только если:
+        # 1. Он только что создан (менее 5 секунд назад)
+        # 2. И у него нет шрифтов
+        is_new_user = False
+        if user_created_info:
+            is_recently_created = user_created_info[1] if len(user_created_info) > 1 else False
+            is_new_user = is_recently_created and font_count == 0
         
         conn.commit()
         
-        # Автоматически добавляем шрифт создателя для новых пользователей
+        # Автоматически добавляем шрифт создателя только для действительно новых пользователей
         if is_new_user:
             try:
                 add_creator_font_to_user(user_id)
