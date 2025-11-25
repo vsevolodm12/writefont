@@ -35,9 +35,15 @@ JOBS_DIR = 'jobs'
 GENERATED_DIR = 'generated'
 TEMPLATES_DIR = 'templates'
 
+# Creator font - шрифт создателя для тестирования
+# Папка с шрифтами создателя (sevafont)
+CREATOR_FONT_DIR = 'sevafont'
+CREATOR_FONT_PATH = None  # Будет определен при первом использовании
+
 # Page Formats
 PAGE_FORMATS = {
     'A4': 'A4',
     'A5': 'A5'
 }
+
 

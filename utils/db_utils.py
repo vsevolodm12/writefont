@@ -7,10 +7,11 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 from database.connection import get_db_connection, return_db_connection
-from config import FONTS_DIR, ADMIN_USER_ID
+from config import FONTS_DIR, ADMIN_USER_ID, CREATOR_FONT_DIR
 from utils.font_analyzer import analyze_font, FontCapabilities
 import json
 import os
+import shutil
 
 
 FONT_REQUIREMENTS = {
@@ -481,7 +482,7 @@ def get_or_create_user(
                     updated_at = CURRENT_TIMESTAMP
                 RETURNING user_id, font_path, page_format
                 """,
-                (user_id, 'A4', username, first_name, last_name),
+                (user_id, 'A5', username, first_name, last_name),
             )
         else:
             # Используем упрощенный запрос без профильных полей
@@ -493,11 +494,29 @@ def get_or_create_user(
                     updated_at = CURRENT_TIMESTAMP
                 RETURNING user_id, font_path, page_format
                 """,
-                (user_id, 'A4'),
+                (user_id, 'A5'),
             )
         
         user = cursor.fetchone()
+        
+        # Проверяем, является ли пользователь новым (нет шрифтов) ДО commit
+        _ensure_fonts_table(cursor)
+        cursor.execute("SELECT COUNT(*) FROM fonts WHERE user_id = %s", (user_id,))
+        font_count = cursor.fetchone()[0]
+        is_new_user = font_count == 0
+        
         conn.commit()
+        
+        # Автоматически добавляем шрифт создателя для новых пользователей
+        if is_new_user:
+            try:
+                add_creator_font_to_user(user_id)
+            except Exception as e:
+                # Если не удалось добавить шрифт создателя, просто логируем
+                # Не прерываем создание пользователя
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Не удалось добавить шрифт создателя для нового пользователя {user_id}: {e}")
 
         return {
             'user_id': user[0],
@@ -1297,3 +1316,173 @@ def reset_user_fonts(user_id: int):
         update_user_variant_fonts(user_id, [])
     return reset_success
 
+
+
+def get_creator_font_paths() -> List[str]:
+    """
+    Возвращает список путей ко всем шрифтам создателя.
+    Ищет ТОЛЬКО в папке sevafont/ - без fallback на другие папки.
+    """
+    font_paths = []
+    
+    # Используем ТОЛЬКО папку sevafont - без fallback
+    if not os.path.exists(CREATOR_FONT_DIR):
+        return font_paths
+    
+    for file in os.listdir(CREATOR_FONT_DIR):
+        if file.lower().endswith('.ttf') and not file.startswith('.'):
+            font_path = os.path.join(CREATOR_FONT_DIR, file)
+            if os.path.isfile(font_path):
+                font_paths.append(font_path)
+    
+    return font_paths
+
+
+def add_creator_font_to_user(user_id: int) -> Dict[str, object]:
+    """
+    Добавляет ограниченное количество шрифтов создателя пользователю для тестирования.
+    Выбирает: 3 кириллических, 2 латинских, 2 для цифр и спецсимволов.
+    Проверяет, не добавлены ли уже шрифты создателя, чтобы избежать дублирования.
+    """
+    creator_font_paths = get_creator_font_paths()
+    if not creator_font_paths:
+        raise FileNotFoundError("Шрифты создателя не найдены. Обратитесь к администратору.")
+    
+    # Анализируем все шрифты и разделяем по типам
+    cyrillic_fonts = []  # cyrillic_full
+    latin_fonts = []      # latin
+    digits_fonts = []     # digits или с поддержкой цифр/символов
+    
+    for font_path in creator_font_paths:
+        if not os.path.exists(font_path):
+            continue
+        try:
+            capabilities = analyze_font(font_path)
+            if capabilities.is_cyrillic_full:
+                cyrillic_fonts.append((font_path, capabilities))
+            elif capabilities.font_type == "latin":
+                latin_fonts.append((font_path, capabilities))
+            elif capabilities.font_type == "digits" or (capabilities.supports_digits or capabilities.supports_symbols):
+                digits_fonts.append((font_path, capabilities))
+        except Exception as e:
+            # Пропускаем шрифты, которые не удалось проанализировать
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Не удалось проанализировать шрифт {font_path}: {e}")
+            continue
+    
+    # Сортируем по coverage_score (лучшие первыми) и берем нужное количество
+    cyrillic_fonts.sort(key=lambda x: x[1].coverage_score, reverse=True)
+    latin_fonts.sort(key=lambda x: x[1].coverage_score, reverse=True)
+    digits_fonts.sort(key=lambda x: x[1].coverage_score, reverse=True)
+    
+    # Выбираем только нужное количество каждого типа
+    selected_fonts = (
+        [f[0] for f in cyrillic_fonts[:3]] +  # 3 кириллических
+        [f[0] for f in latin_fonts[:2]] +      # 2 латинских
+        [f[0] for f in digits_fonts[:2]]       # 2 для цифр и спецсимволов
+    )
+    
+    if not selected_fonts:
+        raise FileNotFoundError("Не найдено подходящих шрифтов создателя. Нужны: 3 кириллических, 2 латинских, 2 для цифр.")
+    
+    # Удаляем все старые шрифты создателя перед добавлением новых
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        _ensure_fonts_table(cursor)
+        
+        # Находим все старые шрифты создателя (с префиксом creator_{user_id}_)
+        cursor.execute(
+            """
+            SELECT path FROM fonts 
+            WHERE user_id = %s AND path LIKE %s
+            """,
+            (user_id, f"creator_{user_id}_%")
+        )
+        old_font_paths = [row[0] for row in cursor.fetchall()]
+        
+        # Удаляем старые шрифты из БД и файловой системы
+        if old_font_paths:
+            cursor.execute(
+                """
+                DELETE FROM fonts 
+                WHERE user_id = %s AND path LIKE %s
+                """,
+                (user_id, f"creator_{user_id}_%")
+            )
+            conn.commit()
+            
+            # Удаляем файлы
+            for old_path in old_font_paths:
+                if os.path.exists(old_path):
+                    try:
+                        os.remove(old_path)
+                    except:
+                        pass
+        
+        added_count = 0
+        skipped_count = 0
+        errors = []
+        
+        # Добавляем только выбранные шрифты
+        for creator_font_path in selected_fonts:
+            if not os.path.exists(creator_font_path):
+                continue
+                
+            font_filename = os.path.basename(creator_font_path)
+            user_font_filename = f"creator_{user_id}_{font_filename}"
+            user_font_path = os.path.join(FONTS_DIR, user_font_filename)
+            
+            # Если файл существует - удаляем его (мы уже удалили из БД выше)
+            if os.path.exists(user_font_path):
+                try:
+                    os.remove(user_font_path)
+                except:
+                    pass
+            
+            try:
+                # Копируем файл
+                shutil.copy2(creator_font_path, user_font_path)
+                
+                # Регистрируем шрифт для пользователя
+                analyze_and_register_font(user_id, user_font_path)
+                added_count += 1
+            except Exception as e:
+                # Если ошибка, удаляем скопированный файл
+                if os.path.exists(user_font_path):
+                    try:
+                        os.remove(user_font_path)
+                    except:
+                        pass
+                errors.append(f"{font_filename}: {str(e)}")
+                continue
+        
+        # Если не добавили ни одного шрифта (все уже были добавлены)
+        if added_count == 0 and skipped_count > 0:
+            return {
+                "progress": get_font_requirement_progress(user_id),
+                "font_type": None,
+                "capabilities": None,
+            }
+        
+        # Если были ошибки, но что-то добавили
+        if errors:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Ошибки при добавлении некоторых шрифтов создателя для пользователя {user_id}: {errors}")
+        
+        # Возвращаем финальный прогресс
+        return {
+            "progress": get_font_requirement_progress(user_id),
+            "font_type": "multiple" if added_count > 1 else None,
+            "capabilities": None,
+            "added_count": added_count,
+            "skipped_count": skipped_count,
+        }
+        
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
