@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import List
 
 from aiogram import Bot, Dispatcher, Router
@@ -7,6 +8,8 @@ from aiogram.types import Message
 
 from config import Settings, get_settings
 from stats_service import fetch_stats
+
+logger = logging.getLogger(__name__)
 
 
 def format_number(value: int) -> str:
@@ -89,8 +92,6 @@ def build_router(settings: Settings) -> Router:
         stats = await asyncio.to_thread(fetch_stats, settings)
         
         # Логируем количество визитов для отладки
-        import logging
-        logger = logging.getLogger(__name__)
         logger.info(f"Получено визитов из БД: {len(stats.recent_visitors)}")
         
         text = await format_report(stats, message.bot)
@@ -141,6 +142,12 @@ def build_router(settings: Settings) -> Router:
 
 
 async def main():
+    # Настраиваем логирование
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
     settings = get_settings()
     bot = Bot(settings.bot_token)
     dp = Dispatcher()

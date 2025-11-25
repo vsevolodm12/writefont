@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 from typing import List
+import logging
 
 from psycopg2.extras import RealDictRow
 
 from config import Settings
 from database import get_cursor
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -110,8 +113,6 @@ def fetch_stats(settings: Settings) -> Stats:
         recent_visitors_rows = cursor.fetchall()
         
         # Логируем для отладки
-        import logging
-        logger = logging.getLogger(__name__)
         logger.info(f"Запрос последних визитов вернул {len(recent_visitors_rows)} записей")
 
     def build_recent(rows: List[RealDictRow]) -> List[RecentUser]:
