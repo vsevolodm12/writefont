@@ -1310,51 +1310,6 @@ def remove_variant_font(user_id: int, font_path: str):
     return False
 
 
-def reset_user_fonts(user_id: int):
-    """Сбрасывает все шрифты пользователя (основной и вариативные)."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        _ensure_fonts_table(cursor)
-        cursor.execute("DELETE FROM fonts WHERE user_id = %s", (user_id,))
-        # Проверяем существует ли колонка variant_fonts
-        cursor.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name='users' AND column_name='variant_fonts'
-        """)
-        
-        if not cursor.fetchone():
-            # Добавляем колонку если не существует
-            cursor.execute("""
-                ALTER TABLE users 
-                ADD COLUMN variant_fonts JSONB DEFAULT '[]'::jsonb
-            """)
-            conn.commit()
-        
-        cursor.execute(
-            """
-            UPDATE users 
-            SET font_path = NULL, variant_fonts = %s, updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = %s
-            """,
-            (json.dumps([]), user_id)
-        )
-        conn.commit()
-        reset_success = cursor.rowcount > 0
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            return_db_connection(conn)
-
-    if reset_success:
-        update_user_variant_fonts(user_id, [])
-    return reset_success
-
-
-
 def get_creator_font_paths() -> List[str]:
     """
     Возвращает список путей ко всем шрифтам создателя.
