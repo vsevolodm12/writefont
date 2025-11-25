@@ -1158,7 +1158,14 @@ def reset_user_fonts(user_id: int):
     
     try:
         _ensure_fonts_table(cursor)
+        
+        # Получаем пути к файлам шрифтов перед удалением из БД
+        cursor.execute("SELECT path FROM fonts WHERE user_id = %s", (user_id,))
+        font_paths = [row[0] for row in cursor.fetchall()]
+        
+        # Удаляем шрифты из БД
         cursor.execute("DELETE FROM fonts WHERE user_id = %s", (user_id,))
+        
         # Проверяем существует ли колонка variant_fonts
         cursor.execute("""
             SELECT column_name 
@@ -1184,6 +1191,16 @@ def reset_user_fonts(user_id: int):
         )
         conn.commit()
         reset_success = cursor.rowcount > 0
+        
+        # Удаляем файлы шрифтов с диска
+        for font_path in font_paths:
+            if font_path and os.path.exists(font_path):
+                try:
+                    os.remove(font_path)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Не удалось удалить файл шрифта {font_path}: {e}")
     finally:
         if cursor:
             cursor.close()
