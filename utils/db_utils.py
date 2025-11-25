@@ -1155,3 +1155,145 @@ def reset_user_fonts(user_id: int):
         update_user_variant_fonts(user_id, [])
     return reset_success
 
+
+def update_job_status_failed(job_id: int, error_message: str = None):
+    """Обновляет статус задачи на failed."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if error_message:
+            # Можно добавить поле error_message в таблицу jobs если нужно
+            cursor.execute(
+                """
+                UPDATE jobs 
+                SET status = %s, completed_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                """,
+                ('failed', job_id)
+            )
+        else:
+            cursor.execute(
+                """
+                UPDATE jobs 
+                SET status = %s, completed_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                """,
+                ('failed', job_id)
+            )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
+
+
+def update_user_variant_fonts(user_id: int, variant_fonts: list):
+    """Обновляет список вариативных шрифтов пользователя."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Проверяем существует ли колонка
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name='variant_fonts'
+        """)
+        
+        if not cursor.fetchone():
+            # Добавляем колонку если не существует
+            cursor.execute("""
+                ALTER TABLE users 
+                ADD COLUMN variant_fonts JSONB DEFAULT '[]'::jsonb
+            """)
+            conn.commit()
+        
+        cursor.execute(
+            """
+            UPDATE users 
+            SET variant_fonts = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s
+            """,
+            (json.dumps(variant_fonts), user_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
+
+
+def add_variant_font(user_id: int, font_path: str):
+    """Добавляет шрифт в список вариативных шрифтов пользователя."""
+    user = get_user_info(user_id)
+    if not user:
+        return False
+    
+    variant_fonts = user.get('variant_fonts', [])
+    if font_path not in variant_fonts:
+        variant_fonts.append(font_path)
+        return update_user_variant_fonts(user_id, variant_fonts)
+    return True  # Шрифт уже есть - это не ошибка
+
+
+def remove_variant_font(user_id: int, font_path: str):
+    """Удаляет шрифт из списка вариативных шрифтов пользователя."""
+    user = get_user_info(user_id)
+    if not user:
+        return False
+    
+    variant_fonts = user.get('variant_fonts', [])
+    if font_path in variant_fonts:
+        variant_fonts.remove(font_path)
+        return update_user_variant_fonts(user_id, variant_fonts)
+    return False
+
+
+def reset_user_fonts(user_id: int):
+    """Сбрасывает все шрифты пользователя (основной и вариативные)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        _ensure_fonts_table(cursor)
+        cursor.execute("DELETE FROM fonts WHERE user_id = %s", (user_id,))
+        # Проверяем существует ли колонка variant_fonts
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name='variant_fonts'
+        """)
+        
+        if not cursor.fetchone():
+            # Добавляем колонку если не существует
+            cursor.execute("""
+                ALTER TABLE users 
+                ADD COLUMN variant_fonts JSONB DEFAULT '[]'::jsonb
+            """)
+            conn.commit()
+        
+        cursor.execute(
+            """
+            UPDATE users 
+            SET font_path = NULL, variant_fonts = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s
+            """,
+            (json.dumps([]), user_id)
+        )
+        conn.commit()
+        reset_success = cursor.rowcount > 0
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            return_db_connection(conn)
+
+    if reset_success:
+        update_user_variant_fonts(user_id, [])
+    return reset_success
+

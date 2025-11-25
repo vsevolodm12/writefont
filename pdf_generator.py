@@ -537,8 +537,8 @@ def generate_pdf(text_content: str, font_sets: Dict[str, list], page_format: str
     # Настройки страницы
     width, height = page_size
     margin_default = 15 * mm
-    bottom_margin = 4 * mm  # Уменьшенный нижний отступ для использования большего пространства
     cell_size = 5 * mm  # Базовый размер клетки сетки
+    bottom_margin = margin_default - 2 * cell_size  # Нижний отступ на 2 клетки меньше верхнего
     grid_margin = 0 if grid_enabled else margin_default
     
     # Вычисляем реальную высоту клетки (для всех режимов для единообразия)
