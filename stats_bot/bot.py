@@ -68,7 +68,7 @@ async def format_recent_visitors(stats, bot: Bot) -> str:
     if not stats.recent_visitors:
         return "—"
     lines: List[str] = []
-    for item in stats.recent_visitors:
+    for idx, item in enumerate(stats.recent_visitors, 1):
         user_tag = item.username.strip() if item.username else ""
         if user_tag:
             label = f"@{user_tag}"
@@ -78,7 +78,7 @@ async def format_recent_visitors(stats, bot: Bot) -> str:
                 label = f"{' '.join(name_parts)} ({item.user_id})"
             else:
                 label = await resolve_username(bot, item.user_id)
-        lines.append(f"• {label}")
+        lines.append(f"{idx}. {label}")
     return "\n".join(lines)
 
 
