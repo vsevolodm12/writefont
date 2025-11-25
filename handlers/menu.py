@@ -157,6 +157,7 @@ async def cmd_start(message: Message):
             welcome_text += "✓ Готов к генерации PDF\n\n"
         else:
             welcome_text += "⚠️ Загрузите шрифты для генерации PDF\n\n"
+            welcome_text += "💡 <b>Совет:</b> Вы можете попробовать шрифт создателя в меню загрузки шрифтов!\n\n"
         
         format_name = PAGE_FORMATS.get(user['page_format'], user['page_format'] or 'A4')
         grid_enabled = user_info.get('grid_enabled', False) if user_info else False
