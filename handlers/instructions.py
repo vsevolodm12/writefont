@@ -82,12 +82,21 @@ async def send_instruction_with_templates(message_or_callback):
     # Отправляем текст инструкции с кнопкой Calligraphr
     await call_with_retries(answer_method, instruction_text, reply_markup=instruction_keyboard, parse_mode="HTML")
     
-    # Ищем PDF файлы в папке templates
+    # Ищем PDF файлы в папке templates (только уникальные, без дубликатов и служебных файлов)
     pdf_files = []
+    seen_files = set()  # Для отслеживания уже добавленных файлов
     if os.path.exists(TEMPLATES_DIR):
         for file in os.listdir(TEMPLATES_DIR):
-            if file.lower().endswith('.pdf'):
-                pdf_files.append(file)
+            # Игнорируем служебные файлы macOS (._*) и проверяем что это реальный PDF
+            if (file.lower().endswith('.pdf') and 
+                not file.startswith('._') and 
+                not file.startswith('.DS_Store') and
+                os.path.isfile(os.path.join(TEMPLATES_DIR, file))):
+                # Игнорируем дубликаты по имени (без учета регистра)
+                file_lower = file.lower()
+                if file_lower not in seen_files:
+                    pdf_files.append(file)
+                    seen_files.add(file_lower)
         pdf_files.sort()  # Сортируем для предсказуемого порядка
     
     # Отправляем каждый PDF файл
@@ -143,7 +152,13 @@ Rutube: https://example.com"""
 async def instruction_fonts(callback: CallbackQuery):
     """Показывает инструкцию по созданию шрифтов"""
     await call_with_retries(callback.answer)
-    await send_instruction_with_templates(callback)
+    # Используем edit_text вместо answer для callback, чтобы не дублировать сообщения
+    if hasattr(callback.message, 'edit_text'):
+        # Если это callback, отправляем через edit_text
+        await send_instruction_with_templates(callback)
+    else:
+        # Если это обычное сообщение, отправляем через answer
+        await send_instruction_with_templates(callback)
 
 
 @router.callback_query(F.data == "instruction_print")
