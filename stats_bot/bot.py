@@ -88,7 +88,40 @@ def build_router(settings: Settings) -> Router:
     async def send_stats(message: Message):
         stats = await asyncio.to_thread(fetch_stats, settings)
         text = await format_report(stats, message.bot)
-        await message.answer(text)
+        
+        # Telegram ограничение: 4096 символов на сообщение
+        # Если сообщение слишком длинное, разбиваем на части
+        MAX_MESSAGE_LENGTH = 4000  # Оставляем запас
+        
+        if len(text) <= MAX_MESSAGE_LENGTH:
+            await message.answer(text)
+        else:
+            # Отправляем основную часть
+            main_text = (
+                "📊 За сегодня:\n"
+                f"- Новые пользователи: {format_number(stats.new_users_today)}\n"
+                f"- Активных пользователей: {format_number(stats.active_today)}\n"
+                f"- Генераций PDF: {format_number(stats.pdf_today)}\n\n"
+                "📈 За всё время:\n"
+                f"- Пользователей: {format_number(stats.total_users)}\n"
+                f"- PDF: {format_number(stats.pdf_total)}\n\n"
+                "Последние генерации:\n"
+                f"{await format_recent(stats, message.bot)}\n\n"
+                "💬 Последние визиты:\n"
+            )
+            await message.answer(main_text)
+            
+            # Отправляем список визитов отдельным сообщением
+            visitors_text = await format_recent_visitors(stats, message.bot)
+            if len(visitors_text) > MAX_MESSAGE_LENGTH:
+                # Если список все еще слишком длинный, разбиваем на части по 30 строк
+                lines = visitors_text.split('\n')
+                chunk_size = 30
+                for i in range(0, len(lines), chunk_size):
+                    chunk = '\n'.join(lines[i:i+chunk_size])
+                    await message.answer(chunk)
+            else:
+                await message.answer(visitors_text)
 
     @router.message(Command("stat"))
     async def cmd_stat(message: Message):
