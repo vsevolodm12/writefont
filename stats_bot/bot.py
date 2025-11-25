@@ -87,6 +87,12 @@ def build_router(settings: Settings) -> Router:
 
     async def send_stats(message: Message):
         stats = await asyncio.to_thread(fetch_stats, settings)
+        
+        # Логируем количество визитов для отладки
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Получено визитов из БД: {len(stats.recent_visitors)}")
+        
         text = await format_report(stats, message.bot)
         
         # Telegram ограничение: 4096 символов на сообщение

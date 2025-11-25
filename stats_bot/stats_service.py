@@ -108,6 +108,11 @@ def fetch_stats(settings: Settings) -> Stats:
             """
         )
         recent_visitors_rows = cursor.fetchall()
+        
+        # Логируем для отладки
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Запрос последних визитов вернул {len(recent_visitors_rows)} записей")
 
     def build_recent(rows: List[RealDictRow]) -> List[RecentUser]:
         return [
