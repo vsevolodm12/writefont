@@ -152,13 +152,7 @@ Rutube: https://example.com"""
 async def instruction_fonts(callback: CallbackQuery):
     """Показывает инструкцию по созданию шрифтов"""
     await call_with_retries(callback.answer)
-    # Используем edit_text вместо answer для callback, чтобы не дублировать сообщения
-    if hasattr(callback.message, 'edit_text'):
-        # Если это callback, отправляем через edit_text
-        await send_instruction_with_templates(callback)
-    else:
-        # Если это обычное сообщение, отправляем через answer
-        await send_instruction_with_templates(callback)
+    await send_instruction_with_templates(callback)
 
 
 @router.callback_query(F.data == "instruction_print")
