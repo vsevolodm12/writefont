@@ -44,8 +44,8 @@ mkdir -p logs
 
 echo "🚀 Запуск бота в фоновом режиме..."
 
-# Запускаем бота в фоне с активацией venv и сохраняем PID
-nohup bash -c "source venv/bin/activate && python bot.py" > logs/bot_output.log 2>&1 &
+# Запускаем бота в фоне используя Python из venv и сохраняем PID
+nohup venv/bin/python bot.py > logs/bot_output.log 2>&1 &
 BOT_PID=$!
 
 # Сохраняем PID

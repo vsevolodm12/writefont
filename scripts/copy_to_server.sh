@@ -94,3 +94,5 @@ echo "   или передайте их как аргументы:"
 echo "   ./scripts/copy_to_server.sh user example.com /home/user/consp_bot"
 echo ""
 
+
+

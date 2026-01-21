@@ -30,8 +30,10 @@ UPLOAD_SEQUENCE = ["cyrillic_full", "digits", "latin"]
 
 def get_main_menu_keyboard(ready_to_generate: bool = True):
     """Главное меню с кнопками"""
+    from config import is_dev_branch
+    
     pdf_button_text = "📝 Создать PDF" if ready_to_generate else "📝 Создать PDF (после загрузки шрифтов)"
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    keyboard_buttons = [
         [InlineKeyboardButton(text=pdf_button_text, callback_data="menu_create_pdf")],
         [
             InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu_settings"),
@@ -41,10 +43,17 @@ def get_main_menu_keyboard(ready_to_generate: bool = True):
             InlineKeyboardButton(text="📚 Инструкция", callback_data="menu_instruction"),
             InlineKeyboardButton(text="📝 Промт для GPT", callback_data="menu_ai_prompt")
         ],
-        [
-            InlineKeyboardButton(text="👤 Познакомиться с создателем бота", url="https://t.me/vsevolodmarchenko")
-        ]
+    ]
+    
+    # Добавляем кнопку для загрузки md файлов только в dev ветке
+    if is_dev_branch():
+        keyboard_buttons.append([InlineKeyboardButton(text="📄 Загрузить Markdown", callback_data="menu_upload_markdown")])
+    
+    keyboard_buttons.append([
+        InlineKeyboardButton(text="👤 Познакомиться с создателем бота", url="https://t.me/vsevolodmarchenko")
     ])
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     return keyboard
 
 
@@ -489,6 +498,43 @@ async def try_creator_font_handler(callback: CallbackQuery):
             f"❌ Ошибка при добавлении шрифта: {str(e)}",
             show_alert=True
         )
+
+
+@router.callback_query(F.data == "menu_upload_markdown")
+async def menu_upload_markdown(callback: CallbackQuery):
+    """Меню загрузки Markdown файла (только в dev ветке)"""
+    from config import is_dev_branch
+    
+    if not is_dev_branch():
+        await call_with_retries(
+            callback.answer,
+            "❌ Эта функция доступна только в dev ветке.",
+            show_alert=True
+        )
+        return
+    
+    user_id = callback.from_user.id
+    ready = has_minimum_font_set(user_id)
+    
+    text = "📄 Загрузка Markdown файла\n\n"
+    text += "Отправьте .md файл, и бот автоматически:\n"
+    text += "• Уберет markdown разметку\n"
+    text += "• Преобразует текст в выбранный шрифт\n"
+    text += "• Создаст PDF конспект\n\n"
+    
+    if ready:
+        text += "✓ Готов к генерации\n\n"
+    else:
+        text += "⚠️ Загрузите хотя бы один кириллический шрифт\n\n"
+    
+    text += "Просто отправьте .md файл после нажатия кнопки ниже."
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu_main")]
+    ])
+    
+    await call_with_retries(callback.message.edit_text, text, reply_markup=keyboard)
+    await call_with_retries(callback.answer)
 
 
 @router.callback_query(F.data == "menu_ai_prompt")

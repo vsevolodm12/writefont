@@ -55,3 +55,5 @@ sudo systemctl status consp-bot
 sudo journalctl -u consp-bot -f
 ```
 
+
+

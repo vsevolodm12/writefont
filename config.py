@@ -47,3 +47,19 @@ PAGE_FORMATS = {
 }
 
 
+def is_dev_branch() -> bool:
+    """Проверяет, находимся ли мы на dev ветке"""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['git', 'branch', '--show-current'],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(os.path.abspath(__file__))
+        )
+        current_branch = result.stdout.strip()
+        return current_branch == 'dev'
+    except Exception:
+        # Если git недоступен или произошла ошибка, возвращаем False
+        return False
+

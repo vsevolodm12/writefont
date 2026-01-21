@@ -42,3 +42,5 @@ echo ""
 echo "Или через rsync:"
 echo "  rsync -avz $TEMPLATES_DIR/ user@server:/path/to/consp_bot/templates/"
 
+
+

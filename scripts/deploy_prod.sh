@@ -37,3 +37,5 @@ echo ""
 echo "📝 Или проверьте логи:"
 echo "   sudo journalctl -u consp-bot -f"
 
+
+
